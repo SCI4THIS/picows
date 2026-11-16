@@ -1,0 +1,21 @@
+picows licensing
+
+LICENSE.txt is the GNU General Public License version 3. It covers the picows
+library sources and headers:
+
+- include/picows/
+- src/ws.cpp, src/http.c, src/http_parse.c, src/http_parse.h, src/core_internal.h,
+  src/usb_identity.h, src/mbedtls_compat/
+- examples/ws_echo/
+- tests/http_parse_test.c
+
+Other trees keep their own notices:
+
+- src/ (TinyUSB, except the picows files named above) and src/usb_descriptors.c: MIT
+- lib/lwip: BSD-3-Clause
+- lib/networking: the license headers in those files
+- submodules/pico-ws-server: MIT
+- submodules/pico-sdk: BSD-3-Clause
+
+The WebSocket handshake uses the small SHA-1 and Base64 in src/mbedtls_compat
+instead of Mbed TLS.

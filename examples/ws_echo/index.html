@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>picows</title>
+<style>
+  body { font-family: sans-serif; margin: 2rem; max-width: 40rem; color: #1a1a1a; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
+  #status { color: #555; }
+  form { display: flex; gap: 0.5rem; margin: 1rem 0; }
+  input { flex: 1; padding: 0.45rem 0.6rem; font: inherit; }
+  button { font: inherit; padding: 0.45rem 0.8rem; }
+  ul { padding-left: 1.2rem; }
+  li { margin: 0.25rem 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+  <h1>It works</h1>
+  <p id="status">Connecting…</p>
+  <form id="send-form">
+    <input id="message" type="text" autocomplete="off" placeholder="Type a message">
+    <button type="submit">Send</button>
+  </form>
+  <ul id="messages"></ul>
+  <script>
+    var status = document.getElementById("status");
+    var messages = document.getElementById("messages");
+    var input = document.getElementById("message");
+    var ws = new WebSocket("ws://" + location.host + "/");
+
+    function add(text) {
+      var item = document.createElement("li");
+      item.textContent = text;
+      messages.appendChild(item);
+    }
+
+    ws.addEventListener("open", function () {
+      status.textContent = "Connected";
+    });
+    ws.addEventListener("message", function (event) {
+      add(String(event.data));
+    });
+    ws.addEventListener("close", function () {
+      status.textContent = "Disconnected";
+    });
+    document.getElementById("send-form").addEventListener("submit", function (event) {
+      event.preventDefault();
+      var text = input.value;
+      if (!text || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      ws.send(text);
+      input.value = "";
+    });
+  </script>
+</body>
+</html>

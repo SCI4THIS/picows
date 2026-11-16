@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 #ifndef PICOWS_HTTP_H
 #define PICOWS_HTTP_H
 
@@ -52,6 +53,12 @@ const picows_http_args_t *picows_http_args(const picows_http_t *srv);
  * @param srv   Initialized picows_http_t instance.
  */
 void picows_http_yield_port(picows_http_t *srv);
+
+/**
+ * Close the listening socket and any accepted connections.
+ * The caller frees the memory it allocated for srv.
+ */
+void picows_http_close(picows_http_t *srv);
 
 #ifdef __cplusplus
 }

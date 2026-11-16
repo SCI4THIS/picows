@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 #ifndef PICOWS_CORE_H
 #define PICOWS_CORE_H
 
@@ -55,6 +56,19 @@ typedef struct picows_args_st {
    * Disable the embedded DHCP server (false = DHCP enabled by default).
    */
   bool disable_dhcp;
+
+  /**
+   * USB VID/PID. Zero keeps 0xCafe / 0x4018.
+   * NULL strings keep "TinyUSB", "TinyUSB Device", and "TinyUSB Network Interface".
+   * usb_rndis_first makes RNDIS configuration 0. Windows binds configuration 0.
+   * The default keeps ECM as configuration 0.
+   */
+  uint16_t usb_vid;
+  uint16_t usb_pid;
+  const char *usb_manufacturer;
+  const char *usb_product;
+  const char *usb_interface;
+  bool usb_rndis_first;
 } picows_args_t;
 
 /**
@@ -88,6 +102,10 @@ bool picows_str_to_ipv4(const char *str, uint32_t *out_ip);
 /**
  * Poll the USB network stack (TinyUSB + lwIP timeouts) and any registered
  * picows servers. Call regularly in the main loop.
+ *
+ * Call stdio_init_all() (or otherwise start clocks) before the first
+ * picows_ws() or picows_http(). This stack uses a single lwIP netif and
+ * cannot share the chip with CYW43.
  */
 void picows_poll(void);
 

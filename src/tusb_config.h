@@ -112,9 +112,7 @@ extern "C" {
   #endif
 #endif
 
-#if LWIP_HIGH_THROUGHPUT && !defined(INCLUDE_IPERF)
-  #define INCLUDE_IPERF
-#endif
+/* iperf is off unless the build defines INCLUDE_IPERF (PICOWS_ENABLE_IPERF). */
 
 //--------------------------------------------------------------------
 // NCM CLASS CONFIGURATION, SEE "ncm.h" FOR PERFORMANCE TUNING

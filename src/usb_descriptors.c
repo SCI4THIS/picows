@@ -26,6 +26,10 @@
 #include "bsp/board_api.h"
 #include "class/net/net_device.h"
 #include "tusb.h"
+#include "usb_identity.h"
+
+#include <stdio.h>
+#include <string.h>
 
 // Unique PID per example: guarantees re-enumeration on re-flash and a fresh host driver match.
 #define USB_PID           0x4018
@@ -68,7 +72,7 @@ enum {
 //--------------------------------------------------------------------+
 // Device Descriptors
 //--------------------------------------------------------------------+
-static const tusb_desc_device_t desc_device = {
+static tusb_desc_device_t desc_device = {
   .bLength         = sizeof(tusb_desc_device_t),
   .bDescriptorType = TUSB_DESC_DEVICE,
   .bcdUSB          = USB_BCD,
@@ -263,6 +267,33 @@ static const uint16_t configuration_sz_arr[CONFIG_ID_COUNT] = {
 
 #endif
 
+static bool picows_rndis_first;
+static uint8_t picows_cfg_scratch[256];
+
+static uint8_t picows_config_src_index(uint8_t index) {
+#if CFG_TUD_ECM_RNDIS
+  if (picows_rndis_first) {
+    return (uint8_t)(index ^ 1u);
+  }
+#else
+  (void)index;
+#endif
+  return index;
+}
+
+/* Copy the configuration and set bConfigurationValue to index+1.
+ * usb_rndis_first serves RNDIS at index 0. Windows binds configuration 0. */
+static const uint8_t *picows_config_for_index(const uint8_t *const *arr, uint8_t index) {
+  const uint8_t *src = arr[picows_config_src_index(index)];
+  uint16_t total = (uint16_t)src[2] | (uint16_t)((uint16_t)src[3] << 8);
+  if (total == 0 || total > sizeof(picows_cfg_scratch)) {
+    return src;
+  }
+  memcpy(picows_cfg_scratch, src, total);
+  picows_cfg_scratch[5] = (uint8_t)(index + 1);
+  return picows_cfg_scratch;
+}
+
 #if TUD_OPT_HIGH_SPEED
 static uint8_t desc_other_speed_config[MAX_CONFIG_TOTAL_LEN];
 
@@ -297,9 +328,14 @@ uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index) {
 
   // if link speed is high return fullspeed config, and vice versa
   const uint8_t *const *arr = (tud_speed_get() == TUSB_SPEED_HIGH) ? configuration_fs_arr : configuration_hs_arr;
+  const uint8_t *src = picows_config_for_index(arr, index);
+  uint16_t total = (uint16_t)src[2] | (uint16_t)((uint16_t)src[3] << 8);
+  if (total > sizeof(desc_other_speed_config)) {
+    return NULL;
+  }
 
   // Note: the descriptor type is OTHER_SPEED_CONFIG instead of CONFIG
-  memcpy(desc_other_speed_config, arr[index], configuration_sz_arr[index]);
+  memcpy(desc_other_speed_config, src, total);
   desc_other_speed_config[1] = TUSB_DESC_OTHER_SPEED_CONFIG;
 
   return desc_other_speed_config;
@@ -314,10 +350,11 @@ const uint8_t *tud_descriptor_configuration_cb(uint8_t index) {
   if (index >= CONFIG_ID_COUNT) return NULL;
 #if TUD_OPT_HIGH_SPEED
   // Although we are highspeed, host may be fullspeed.
-  return (tud_speed_get() == TUSB_SPEED_HIGH) ? configuration_hs_arr[index] : configuration_fs_arr[index];
+  const uint8_t *const *arr = (tud_speed_get() == TUSB_SPEED_HIGH) ? configuration_hs_arr : configuration_fs_arr;
 #else
-  return configuration_fs_arr[index];
+  const uint8_t *const *arr = configuration_fs_arr;
 #endif
+  return picows_config_for_index(arr, index);
 }
 
 #if CFG_TUD_NCM
@@ -431,13 +468,38 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, const tusb_contro
 // String Descriptors
 //--------------------------------------------------------------------+
 
+static char picows_mfr[32] = "TinyUSB";
+static char picows_product[32] = "TinyUSB Device";
+static char picows_iface[40] = "TinyUSB Network Interface";
+
+static void picows_copy_usb_str(char *dst, size_t dst_len, const char *src) {
+  if (!src || src[0] == '\0') {
+    return;
+  }
+  snprintf(dst, dst_len, "%s", src);
+}
+
+void picows_usb_set_identity(uint16_t vid, uint16_t pid, const char *manufacturer,
+                             const char *product, const char *interface_name, bool rndis_first) {
+  if (vid != 0) {
+    desc_device.idVendor = vid;
+  }
+  if (pid != 0) {
+    desc_device.idProduct = pid;
+  }
+  picows_copy_usb_str(picows_mfr, sizeof(picows_mfr), manufacturer);
+  picows_copy_usb_str(picows_product, sizeof(picows_product), product);
+  picows_copy_usb_str(picows_iface, sizeof(picows_iface), interface_name);
+  picows_rndis_first = rndis_first;
+}
+
 // array of pointer to string descriptors
 static const char *string_desc_arr[STRID_COUNT] = {
   [STRID_LANGID]       = (const char[]){0x09, 0x04},  // supported language is English (0x0409)
-  [STRID_MANUFACTURER] = "TinyUSB",                   // Manufacturer
-  [STRID_PRODUCT]      = "TinyUSB Device",            // Product
+  [STRID_MANUFACTURER] = picows_mfr,
+  [STRID_PRODUCT]      = picows_product,
   [STRID_SERIAL]       = NULL,                        // Serials will use unique ID if possible
-  [STRID_INTERFACE]    = "TinyUSB Network Interface", // Interface Description
+  [STRID_INTERFACE]    = picows_iface,
   [STRID_MAC]          = NULL                         // STRID_MAC index is handled separately
 };
 

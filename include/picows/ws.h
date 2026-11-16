@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 #ifndef PICOWS_WS_H
 #define PICOWS_WS_H
 
@@ -20,6 +21,13 @@ typedef void (*picows_ws_message_cb_t)(picows_ws_t *ws, uint32_t conn_id, const 
 typedef struct picows_ws_args_st {
   picows_args_t core_args;
   picows_http_t *http;    /* Optional HTTP server sharing this port */
+  /**
+   * Optional raw page served on GET / by the WebSocket listener.
+   * Ignored when http is set; that server's buffer is used instead.
+   */
+  const uint8_t *page;
+  size_t page_len;
+  bool page_gzipped;
   uint32_t max_conns;     /* 0 defaults to 1 */
   bool tcp_nodelay;       /* true disables Nagle's algorithm */
   picows_ws_connect_cb_t on_connect;
@@ -83,6 +91,14 @@ bool picows_ws_broadcast_binary(picows_ws_t *srv, const void *data, size_t len);
  * Close a WebSocket connection.
  */
 bool picows_ws_close(picows_ws_t *srv, uint32_t conn_id);
+
+/**
+ * Stop the listener, abort its connections, and destroy the server object.
+ * The caller frees the memory it allocated for srv. At most four servers
+ * are accepted; picows_ws() returns 0 for a fifth. max_conns above
+ * PICOWS_MAX_WS_CONNS (4) also returns 0.
+ */
+void picows_ws_close_server(picows_ws_t *srv);
 
 #ifdef __cplusplus
 }

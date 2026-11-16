@@ -73,8 +73,17 @@
 #define LWIP_HTTPD_SSI                  0
 #define LWIP_HTTPD_SSI_INCLUDE_TAG      0
 
+/*
+ * One netif only: picows cannot share this lwIP instance with CYW43.
+ * Active PCBs cover the HTTP server (PICOWS_MAX_HTTP_CONNS) and one WebSocket
+ * server (PICOWS_MAX_WS_CONNS). Listeners use the listen pool.
+ */
 #define LWIP_SINGLE_NETIF               1
 #define LWIP_NETIF_LINK_CALLBACK        1
+#define PICOWS_MAX_HTTP_CONNS           4
+#define PICOWS_MAX_WS_CONNS             4
+#define MEMP_NUM_TCP_PCB                (PICOWS_MAX_HTTP_CONNS + PICOWS_MAX_WS_CONNS)
+#define MEMP_NUM_TCP_PCB_LISTEN         2
 
 #define HTTPD_USE_CUSTOM_FSDATA         0
 

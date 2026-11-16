@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 #ifndef PICOWS_CORE_INTERNAL_H
 #define PICOWS_CORE_INTERNAL_H
 
@@ -9,8 +10,10 @@ extern "C" {
 
 /**
  * Internal initialization function for the USB network + lwIP stack.
- * Safe to call multiple times (idempotent after first initialization).
- * If args is NULL, default settings (192.168.7.1/24) are used.
+ * The first successful call owns IP, netmask, gateway, MAC, DNS name, DHCP,
+ * and USB identity. A later call with a different configuration returns false.
+ * Returns false if USB or lwIP setup fails. If args is NULL, defaults are used.
+ * The application starts clocks and stdio before this runs.
  */
 bool picows_core_init(const picows_args_t *args);
 

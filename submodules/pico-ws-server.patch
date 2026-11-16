@@ -1,21 +1,43 @@
-diff --git i/CMakeLists.txt w/CMakeLists.txt
-index cef4fba..256d214 100644
---- i/CMakeLists.txt
-+++ w/CMakeLists.txt
-@@ -12,6 +12,12 @@ set(STATIC_HTML_FILENAME "" CACHE PATH "Filename of static HTML file" PARENT_SCO
+diff -ruN /tmp/pws-base/CMakeLists.txt /tmp/pws-work/CMakeLists.txt
+diff --git a/CMakeLists.txt	2026-11-16 01:52:08.286730726 +0000 b/CMakeLists.txt	2026-11-16 02:59:10.353644996 +0000
+--- a/CMakeLists.txt	2026-11-16 01:52:08.286730726 +0000
++++ b/CMakeLists.txt	2026-11-16 02:59:10.353644996 +0000
+@@ -1,18 +1,27 @@
+ cmake_minimum_required(VERSION 3.13)
+ 
+-include(pico_sdk_import.cmake)
+-
+-project(pico_ws_server C CXX ASM)
+-set(CMAKE_C_STANDARD 11)
+-set(CMAKE_CXX_STANDARD 17)
+-pico_sdk_init()
++# Top-level builds of this tree still bring up the Pico SDK. picows adds this
++# directory with add_subdirectory() after the parent has already done that.
++if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
++  include(pico_sdk_import.cmake)
++  project(pico_ws_server C CXX ASM)
++  set(CMAKE_C_STANDARD 11)
++  set(CMAKE_CXX_STANDARD 17)
++  pico_sdk_init()
++endif()
+ 
+ set(STATIC_HTML_PATH "" CACHE PATH "Directory of static HTML file" PARENT_SCOPE)
+ set(STATIC_HTML_FILENAME "" CACHE PATH "Filename of static HTML file" PARENT_SCOPE)
  mark_as_advanced(STATIC_HTML_PATH)
  mark_as_advanced(STATIC_HTML_FILENAME)
  
+-add_library(pico_ws_server
 +option(
 +  PICO_WS_SERVER_USE_CYW43
 +  "Use Pico W CYW43 synchronization"
 +  ON
 +)
 +
- add_library(pico_ws_server
++add_library(pico_ws_server OBJECT
    src/client_connection.cpp
    src/http_handler.cpp
-@@ -22,38 +28,42 @@ add_library(pico_ws_server
+   src/web_socket_frame_builder.cpp
+@@ -22,38 +31,43 @@
    src/web_socket_server_internal.cpp
  )
  
@@ -31,17 +53,16 @@ index cef4fba..256d214 100644
  target_include_directories(pico_ws_server PRIVATE ${PROJECT_BINARY_DIR})
  
 -target_compile_definitions(pico_ws_server PUBLIC DEBUG_PRINT=0)
+-
+-target_link_libraries(pico_ws_server
+-  pico_stdlib
+-  pico_cyw43_driver
+-  pico_lwip_nosys
+-  pico_mbedtls
+-  lwipopts_provider
 +target_compile_definitions(pico_ws_server PUBLIC
 +  DEBUG_PRINT=0
 +  PICO_WS_SERVER_USE_CYW43=$<BOOL:${PICO_WS_SERVER_USE_CYW43}>
-+)
- 
- target_link_libraries(pico_ws_server
-   pico_stdlib
--  pico_cyw43_driver
--  pico_lwip_nosys
-   pico_mbedtls
-   lwipopts_provider
  )
  
 -add_custom_command(
@@ -53,17 +74,24 @@ index cef4fba..256d214 100644
 -    COMMAND ${CMAKE_COMMAND} -E chdir ${PROJECT_BINARY_DIR} xxd -i static.html.gz >> ${PROJECT_BINARY_DIR}/static_html_hex.h
 -    COMMAND ${CMAKE_COMMAND} -E echo "\\#endif // STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
 -)
-+if(PICO_WS_SERVER_USE_CYW43)
-+  target_link_libraries(pico_ws_server
-+    pico_cyw43_driver
-+    pico_lwip_nosys
-+  )
++# pico_stdlib and Mbed TLS are not linked here. picows compiles these objects
++# into libpicows_ws.a and supplies a SHA-1 for the handshake. A standalone
++# CYW43 build still pulls the Pico W driver below.
++if(NOT PICO_WS_SERVER_USE_CYW43)
++  target_link_libraries(pico_ws_server PUBLIC lwipopts_provider)
 +endif()
  
 -add_custom_target(generate_static_html_hex ALL
 -    DEPENDS ${PROJECT_BINARY_DIR}/static_html_hex.h
 -)
 -add_dependencies(pico_ws_server generate_static_html_hex)
++if(PICO_WS_SERVER_USE_CYW43)
++  target_link_libraries(pico_ws_server
++    pico_cyw43_driver
++    pico_lwip_nosys
++  )
++endif()
++
 +if(STATIC_HTML_PATH AND STATIC_HTML_FILENAME)
 +  target_compile_definitions(pico_ws_server PRIVATE PICO_WS_SERVER_HAS_STATIC_HTML_HEADER=1)
 +  add_custom_command(
@@ -81,10 +109,10 @@ index cef4fba..256d214 100644
 +  )
 +  add_dependencies(pico_ws_server generate_static_html_hex)
 +endif()
-diff --git i/include/pico_ws_server/cyw43_guard.h w/include/pico_ws_server/cyw43_guard.h
-index b0eabb3..e8eed2d 100644
---- i/include/pico_ws_server/cyw43_guard.h
-+++ w/include/pico_ws_server/cyw43_guard.h
+diff -ruN /tmp/pws-base/include/pico_ws_server/cyw43_guard.h /tmp/pws-work/include/pico_ws_server/cyw43_guard.h
+diff --git a/include/pico_ws_server/cyw43_guard.h	2026-11-16 01:52:08.288489177 +0000 b/include/pico_ws_server/cyw43_guard.h	2026-11-16 02:55:46.008938695 +0000
+--- a/include/pico_ws_server/cyw43_guard.h	2026-11-16 01:52:08.288489177 +0000
++++ b/include/pico_ws_server/cyw43_guard.h	2026-11-16 02:55:46.008938695 +0000
 @@ -1,6 +1,12 @@
  #ifndef __PICO_WS_SERVER_CYW43_GUARD_H__
  #define __PICO_WS_SERVER_CYW43_GUARD_H__
@@ -98,7 +126,7 @@ index b0eabb3..e8eed2d 100644
  #include "cyw43_config.h"
  
  // RAII-style wrapper for cyw43 thread enter/exit.
-@@ -14,4 +20,21 @@ class Cyw43Guard {
+@@ -14,4 +20,21 @@
    }
  };
  
@@ -120,11 +148,11 @@ index b0eabb3..e8eed2d 100644
 +#endif
 +
  #endif
-diff --git i/include/pico_ws_server/web_socket_server.h w/include/pico_ws_server/web_socket_server.h
-index 5b3e2ce..a4b4dce 100644
---- i/include/pico_ws_server/web_socket_server.h
-+++ w/include/pico_ws_server/web_socket_server.h
-@@ -40,6 +40,9 @@ class WebSocketServer {
+diff -ruN /tmp/pws-base/include/pico_ws_server/web_socket_server.h /tmp/pws-work/include/pico_ws_server/web_socket_server.h
+diff --git a/include/pico_ws_server/web_socket_server.h	2026-11-16 01:52:08.288529886 +0000 b/include/pico_ws_server/web_socket_server.h	2026-11-16 02:55:46.008952070 +0000
+--- a/include/pico_ws_server/web_socket_server.h	2026-11-16 01:52:08.288529886 +0000
++++ b/include/pico_ws_server/web_socket_server.h	2026-11-16 02:55:46.008952070 +0000
+@@ -40,6 +40,9 @@
    // Default is false (Nagle's algorithm enabled).
    void setTcpNoDelay(bool enabled);
  
@@ -134,10 +162,10 @@ index 5b3e2ce..a4b4dce 100644
    // Send a TEXT message, payload must be a null-terminated string
    bool sendMessage(uint32_t conn_id, const char* payload);
    // Send a BINARY message
-diff --git i/src/client_connection.cpp w/src/client_connection.cpp
-index 670ca6a..c5e7480 100644
---- i/src/client_connection.cpp
-+++ w/src/client_connection.cpp
+diff -ruN /tmp/pws-base/src/client_connection.cpp /tmp/pws-work/src/client_connection.cpp
+diff --git a/src/client_connection.cpp	2026-11-16 01:52:08.288529886 +0000 b/src/client_connection.cpp	2026-11-16 02:59:10.264644248 +0000
+--- a/src/client_connection.cpp	2026-11-16 01:52:08.288529886 +0000
++++ b/src/client_connection.cpp	2026-11-16 02:59:10.264644248 +0000
 @@ -4,7 +4,7 @@
  #include <string.h>
  #include <queue>
@@ -147,7 +175,7 @@ index 670ca6a..c5e7480 100644
  #include "lwip/pbuf.h"
  #include "lwip/tcp.h"
  
-@@ -65,6 +65,18 @@ bool ClientConnection::onSent(uint16_t len) {
+@@ -65,6 +65,18 @@
    return http_handler.onSent(len);
  }
  
@@ -166,11 +194,41 @@ index 670ca6a..c5e7480 100644
  void ClientConnection::onClose() {
    server.onClose(this, http_handler.isUpgraded());
  }
-diff --git i/src/client_connection.h w/src/client_connection.h
-index 8fa7f4f..8029e7d 100644
---- i/src/client_connection.h
-+++ w/src/client_connection.h
-@@ -41,6 +41,9 @@ class ClientConnection {
+@@ -117,6 +129,20 @@
+   return sendWebSocketBinaryMessage(payload, size);
+ }
+ 
++void ClientConnection::abortConnection() {
++  if (!pcb) {
++    return;
++  }
++  struct tcp_pcb* dying = pcb;
++  pcb = nullptr;
++  tcp_arg(dying, nullptr);
++  tcp_recv(dying, nullptr);
++  tcp_err(dying, nullptr);
++  tcp_sent(dying, nullptr);
++  tcp_poll(dying, nullptr, 0);
++  tcp_abort(dying);
++}
++
+ bool ClientConnection::close() {
+   if (!http_handler.isUpgraded()) {
+     return false;
+diff -ruN /tmp/pws-base/src/client_connection.h /tmp/pws-work/src/client_connection.h
+diff --git a/src/client_connection.h	2026-11-16 01:52:08.288656010 +0000 b/src/client_connection.h	2026-11-16 02:59:10.263644239 +0000
+--- a/src/client_connection.h	2026-11-16 01:52:08.288656010 +0000
++++ b/src/client_connection.h	2026-11-16 02:59:10.263644239 +0000
+@@ -34,6 +34,8 @@
+   bool sendWebSocketMessage(const void* payload, size_t size);
+ 
+   bool close();
++  /* Drop the TCP PCB without running close callbacks. */
++  void abortConnection();
+ 
+   void popMessages();
+   bool process(struct pbuf* pb);
+@@ -41,6 +43,9 @@
    bool flushSend();
    bool needsSentCallback();
    bool onSent(uint16_t len);
@@ -180,10 +238,10 @@ index 8fa7f4f..8029e7d 100644
  
   private:
    WebSocketServerInternal& server;
-diff --git i/src/http_handler.cpp w/src/http_handler.cpp
-index b0ffdab..fe0298a 100644
---- i/src/http_handler.cpp
-+++ w/src/http_handler.cpp
+diff -ruN /tmp/pws-base/src/http_handler.cpp /tmp/pws-work/src/http_handler.cpp
+diff --git a/src/http_handler.cpp	2026-11-16 01:52:08.288656010 +0000 b/src/http_handler.cpp	2026-11-16 02:55:46.008982904 +0000
+--- a/src/http_handler.cpp	2026-11-16 01:52:08.288656010 +0000
++++ b/src/http_handler.cpp	2026-11-16 02:55:46.008982904 +0000
 @@ -12,8 +12,10 @@
  #include "client_connection.h"
  #include "debug.h"
@@ -195,7 +253,7 @@ index b0ffdab..fe0298a 100644
  
  namespace {
  
-@@ -50,8 +52,10 @@ static constexpr const char BAD_METHOD_RESPONSE[] =
+@@ -50,8 +52,10 @@
  static constexpr const char HTML_RESPONSE_START[] =
    "HTTP/1.1 200 OK\r\n"
    "Connection: close\r\n"
@@ -208,7 +266,7 @@ index b0ffdab..fe0298a 100644
    "Content-Length: ";
  static constexpr const char HTML_RESPONSE_END[] =
    "\r\n\r\n";
-@@ -105,11 +109,34 @@ bool HTTPHandler::sendString(const char* s) {
+@@ -105,11 +109,34 @@
  }
  
  bool HTTPHandler::sendHTML() {
@@ -244,7 +302,7 @@ index b0ffdab..fe0298a 100644
    if (!sendString(len_string)) {
      return false;
    }
-@@ -117,8 +144,12 @@ bool HTTPHandler::sendHTML() {
+@@ -117,8 +144,12 @@
      return false;
    }
  
@@ -259,7 +317,7 @@ index b0ffdab..fe0298a 100644
    response_bytes_acked = 0;
    response_committed = true;
    serving_static_html = true;
-@@ -139,11 +170,20 @@ bool HTTPHandler::sendHTMLChunks() {
+@@ -139,11 +170,20 @@
      return true;
    }
  
@@ -283,7 +341,7 @@ index b0ffdab..fe0298a 100644
        if (!sent_any) {
          return false;
        }
-@@ -155,7 +195,7 @@ bool HTTPHandler::sendHTMLChunks() {
+@@ -155,7 +195,7 @@
      connection.flushSend();
    }
  
@@ -292,11 +350,11 @@ index b0ffdab..fe0298a 100644
      serving_static_html = false;
    }
  
-diff --git i/src/web_socket_server.cpp w/src/web_socket_server.cpp
-index f44cf5e..026c4dd 100644
---- i/src/web_socket_server.cpp
-+++ w/src/web_socket_server.cpp
-@@ -39,6 +39,10 @@ void WebSocketServer::setTcpNoDelay(bool enabled) {
+diff -ruN /tmp/pws-base/src/web_socket_server.cpp /tmp/pws-work/src/web_socket_server.cpp
+diff --git a/src/web_socket_server.cpp	2026-11-16 01:52:08.288730718 +0000 b/src/web_socket_server.cpp	2026-11-16 02:55:46.008993571 +0000
+--- a/src/web_socket_server.cpp	2026-11-16 01:52:08.288730718 +0000
++++ b/src/web_socket_server.cpp	2026-11-16 02:55:46.008993571 +0000
+@@ -39,6 +39,10 @@
    internal->setTcpNoDelay(enabled);
  }
  
@@ -307,10 +365,10 @@ index f44cf5e..026c4dd 100644
  bool WebSocketServer::sendMessage(uint32_t conn_id, const char* payload) {
    return internal->sendMessage(conn_id, payload);
  }
-diff --git i/src/web_socket_server_internal.cpp w/src/web_socket_server_internal.cpp
-index e341304..44675c0 100644
---- i/src/web_socket_server_internal.cpp
-+++ w/src/web_socket_server_internal.cpp
+diff -ruN /tmp/pws-base/src/web_socket_server_internal.cpp /tmp/pws-work/src/web_socket_server_internal.cpp
+diff --git a/src/web_socket_server_internal.cpp	2026-11-16 01:52:08.288730718 +0000 b/src/web_socket_server_internal.cpp	2026-11-16 02:59:10.262644231 +0000
+--- a/src/web_socket_server_internal.cpp	2026-11-16 01:52:08.288730718 +0000
++++ b/src/web_socket_server_internal.cpp	2026-11-16 02:59:10.262644231 +0000
 @@ -2,7 +2,6 @@
  
  #include <stdint.h>
@@ -319,11 +377,43 @@ index e341304..44675c0 100644
  #include "lwip/tcp.h"
  
  #include "client_connection.h"
-diff --git i/src/web_socket_server_internal.h w/src/web_socket_server_internal.h
-index 65ca3f9..9807b16 100644
---- i/src/web_socket_server_internal.h
-+++ w/src/web_socket_server_internal.h
-@@ -21,6 +21,14 @@ class WebSocketServerInternal {
+@@ -172,6 +171,24 @@
+ 
+ } // namespace
+ 
++WebSocketServerInternal::~WebSocketServerInternal() {
++  for (auto& entry : connection_by_id) {
++    if (entry.second) {
++      entry.second->abortConnection();
++    }
++  }
++  connection_by_id.clear();
++  if (listen_pcb) {
++    tcp_arg(listen_pcb, nullptr);
++    tcp_accept(listen_pcb, nullptr);
++    struct tcp_pcb* dying = listen_pcb;
++    listen_pcb = nullptr;
++    if (tcp_close(dying) != ERR_OK) {
++      tcp_abort(dying);
++    }
++  }
++}
++
+ bool WebSocketServerInternal::startListening(uint16_t port) {
+   Cyw43Guard guard;
+ 
+diff -ruN /tmp/pws-base/src/web_socket_server_internal.h /tmp/pws-work/src/web_socket_server_internal.h
+diff --git a/src/web_socket_server_internal.h	2026-11-16 01:52:08.288730718 +0000 b/src/web_socket_server_internal.h	2026-11-16 02:59:10.266089343 +0000
+--- a/src/web_socket_server_internal.h	2026-11-16 01:52:08.288730718 +0000
++++ b/src/web_socket_server_internal.h	2026-11-16 02:59:10.266089343 +0000
+@@ -15,12 +15,21 @@
+  public:
+   WebSocketServerInternal(WebSocketServer& server, uint32_t max_connections)
+       : server(server), max_connections(max_connections) {}
++  ~WebSocketServerInternal();
+ 
+   void setConnectCallback(WebSocketServer::ConnectCallback cb) { connect_cb = cb; }
+   void setCloseCallback(WebSocketServer::CloseCallback cb) { close_cb = cb; }
    void setMessageCallback(WebSocketServer::MessageCallback cb) { message_cb = cb; }
    void setPongCallback(WebSocketServer::PongCallback cb) { pong_cb = cb; }
    void setTcpNoDelay(bool enabled) { tcp_nodelay = enabled; }
@@ -338,7 +428,7 @@ index 65ca3f9..9807b16 100644
  
    bool startListening(uint16_t port);
    void popMessages();
-@@ -45,6 +53,9 @@ class WebSocketServerInternal {
+@@ -45,6 +54,9 @@
  
    uint32_t max_connections;
    bool tcp_nodelay = false;
