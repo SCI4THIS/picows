@@ -153,12 +153,21 @@ set(
   FORCE
 )
 
+# pico-ws-server uses structured bindings, so this directory is C++17.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
+
 add_subdirectory(
   "${PICO_WS_SERVER_STAGED_DIR}"
   "${CMAKE_CURRENT_BINARY_DIR}/pico-ws-server-build"
 )
 
 add_dependencies(pico_ws_server picows_stage_pico_ws_server)
+
+set_target_properties(pico_ws_server PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
+)
 
 target_include_directories(pico_ws_server BEFORE PRIVATE
   ${PICOWS_ROOT}/src/mbedtls_compat
@@ -213,6 +222,11 @@ add_library(picows STATIC
   ${LWIP}/src/netif/slipif.c
   ${PICOWS_TINYUSB_SOURCES}
   $<TARGET_OBJECTS:pico_ws_server>
+)
+
+set_target_properties(picows PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
 )
 
 option(PICOWS_ENABLE_IPERF "Compile lwIP iperf. The application must start the server." OFF)

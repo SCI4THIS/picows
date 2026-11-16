@@ -94,9 +94,13 @@ bool picows_ws_close(picows_ws_t *srv, uint32_t conn_id);
 
 /**
  * Stop the listener, abort its connections, and destroy the server object.
- * The caller frees the memory it allocated for srv. At most four servers
- * are accepted; picows_ws() returns 0 for a fifth. max_conns above
- * PICOWS_MAX_WS_CONNS (4) also returns 0.
+ * The caller frees the memory it allocated for srv after this returns.
+ * At most two servers are accepted; picows_ws() returns 0 for a third.
+ * max_conns above PICOWS_MAX_WS_CONNS (4) also returns 0.
+ *
+ * A call from a connect, close, or message callback queues srv. picows_poll()
+ * or picows_ws_poll() destroys it once the WebSocket stack has returned from
+ * that callback. Do not free srv until that poll call returns.
  */
 void picows_ws_close_server(picows_ws_t *srv);
 

@@ -431,9 +431,13 @@ extern "C" bool picows_core_init(const picows_args_t *args) {
   return true;
 }
 
+static void ws_cull_run(void);
+
 extern "C" void picows_poll(void) {
   tud_task();
   sys_check_timeouts();
+  /* TCP callbacks have returned. Destroy servers they queued. */
+  ws_cull_run();
 
   for (size_t i = 0; i < picows_core.num_poll_fns; i++) {
     picows_core.poll_fns[i]();
@@ -450,7 +454,7 @@ struct picows_ws_st {
       : args{}, port(80), server(max_conns), initialized(false) {}
 };
 
-#define MAX_WS_INSTANCES 4
+#define MAX_WS_INSTANCES 2
 
 static struct picows_ws_global_st {
   picows_ws_t *instances[MAX_WS_INSTANCES];
@@ -459,6 +463,13 @@ static struct picows_ws_global_st {
     .instances = {nullptr},
     .num_instances = 0,
 };
+
+/* Close from a user callback is queued. popMessages and the TCP callbacks
+ * still use the server after that callback returns. */
+static int ws_callback_depth;
+static picows_ws_t *ws_cull[MAX_WS_INSTANCES];
+static size_t ws_cull_count;
+static bool ws_culling;
 
 extern "C" void __attribute__((weak)) picows_http_yield_port(picows_http_t *srv) {
   (void)srv;
@@ -470,33 +481,41 @@ picows_http_args(const picows_http_t *srv) {
   return nullptr;
 }
 
-static void ws_poll_all(void) {
-  for (size_t i = 0; i < picows_ws_global.num_instances; i++) {
-    if (picows_ws_global.instances[i] && picows_ws_global.instances[i]->initialized) {
-      picows_ws_global.instances[i]->server.popMessages();
-    }
-  }
-}
-
 static void on_ws_connect(WebSocketServer &server, uint32_t conn_id) {
   auto *ws = static_cast<picows_ws_t *>(server.getCallbackExtra());
   if (ws && ws->args.on_connect) {
+    ws_callback_depth++;
     ws->args.on_connect(ws, conn_id, ws->args.user_data);
+    ws_callback_depth--;
   }
 }
 
 static void on_ws_close(WebSocketServer &server, uint32_t conn_id) {
   auto *ws = static_cast<picows_ws_t *>(server.getCallbackExtra());
   if (ws && ws->args.on_close) {
+    ws_callback_depth++;
     ws->args.on_close(ws, conn_id, ws->args.user_data);
+    ws_callback_depth--;
   }
 }
 
 static void on_ws_message(WebSocketServer &server, uint32_t conn_id, const void *data, size_t len) {
   auto *ws = static_cast<picows_ws_t *>(server.getCallbackExtra());
   if (ws && ws->args.on_message) {
+    ws_callback_depth++;
     ws->args.on_message(ws, conn_id, data, len, ws->args.user_data);
+    ws_callback_depth--;
   }
+}
+
+static void ws_poll_all(void) {
+  for (size_t i = 0; i < picows_ws_global.num_instances; i++) {
+    if (picows_ws_global.instances[i] && picows_ws_global.instances[i]->initialized) {
+      picows_ws_global.instances[i]->server.popMessages();
+    }
+  }
+  /* Message callbacks have returned and popMessages is done with the servers. */
+  ws_cull_run();
 }
 
 static size_t ws_fail(picows_ws_t *ws) {
@@ -555,7 +574,7 @@ extern "C" size_t picows_ws(const picows_ws_args_t *args, picows_ws_t *ws) {
   return sizeof(struct picows_ws_st);
 }
 
-extern "C" void picows_ws_close_server(picows_ws_t *srv) {
+static void ws_close_server_now(picows_ws_t *srv) {
   if (!srv || !srv->initialized) {
     return;
   }
@@ -573,6 +592,41 @@ extern "C" void picows_ws_close_server(picows_ws_t *srv) {
   srv->~picows_ws_st();
 }
 
+static void ws_cull_add(picows_ws_t *srv) {
+  for (size_t i = 0; i < ws_cull_count; i++) {
+    if (ws_cull[i] == srv) {
+      return;
+    }
+  }
+  if (ws_cull_count < MAX_WS_INSTANCES) {
+    ws_cull[ws_cull_count++] = srv;
+  }
+}
+
+static void ws_cull_run(void) {
+  if (ws_culling || ws_callback_depth > 0) {
+    return;
+  }
+  ws_culling = true;
+  while (ws_cull_count > 0) {
+    picows_ws_t *srv = ws_cull[--ws_cull_count];
+    ws_cull[ws_cull_count] = nullptr;
+    ws_close_server_now(srv);
+  }
+  ws_culling = false;
+}
+
+extern "C" void picows_ws_close_server(picows_ws_t *srv) {
+  if (!srv || !srv->initialized) {
+    return;
+  }
+  if (ws_callback_depth > 0) {
+    ws_cull_add(srv);
+    return;
+  }
+  ws_close_server_now(srv);
+}
+
 extern "C" const picows_ws_args_t *picows_ws_args(const picows_ws_t *srv) {
   if (!srv || !srv->initialized) {
     return nullptr;
@@ -581,9 +635,12 @@ extern "C" const picows_ws_args_t *picows_ws_args(const picows_ws_t *srv) {
 }
 
 extern "C" void picows_ws_poll(picows_ws_t *srv) {
+  /* A server queued by an earlier TCP callback is already off the stack. */
+  ws_cull_run();
   if (srv && srv->initialized) {
     srv->server.popMessages();
   }
+  ws_cull_run();
 }
 
 extern "C" bool picows_ws_send_text(picows_ws_t *srv, uint32_t conn_id, const char *text) {

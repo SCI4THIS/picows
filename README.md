@@ -14,7 +14,8 @@
    - An all-zero MAC is filled from the Pico unique id, with the first byte `0x02`.
    - Polled from the main loop with `picows_poll()`. The application calls `stdio_init_all()` first. The library does not call `board_init()` and does not read the BOOTSEL button.
    - The USB/lwIP driver lives in `src/ws.cpp`. lwIP is built with `LWIP_SINGLE_NETIF`, so this stack cannot share the chip with CYW43.
-   - `MEMP_NUM_TCP_PCB` is 8: four HTTP connections and four WebSocket connections. A fifth WebSocket server returns 0 from `picows_ws()`. `picows_ws_close_server()` and `picows_http_close()` release the sockets.
+   - `MEMP_NUM_TCP_PCB` is 8: four HTTP connections and four WebSocket connections, shared by every server. At most two WebSocket servers are accepted; `picows_ws()` returns 0 for a third. The listen pool is two sockets, shared with `picows_http` when HTTP uses its own port.
+   - `picows_ws_close_server()` from a connect, close, or message callback is queued. `picows_poll()` or `picows_ws_poll()` destroys that server after the WebSocket stack returns. Free the server memory after that poll call returns. `picows_http_close()` releases the HTTP sockets.
    - `linkoutput` returns `ERR_USE` when TinyUSB cannot take a packet. It does not re-enter `tud_task()`.
 
 2. **`picows_http`** (`#include <picows/http.h>`) *(optional)*
@@ -71,7 +72,7 @@ add_subdirectory(picows)
 picows_initialize_project(my_app)
 ```
 
-`picows_initialize_project` links `picows` and `pico_stdlib` and selects the C++ linker. It does not change `BOARD` or `CMAKE_BUILD_TYPE`. Link `picows_http` as well for the optional HTTP server. `PICOWS_ENABLE_IPERF` compiles lwIP iperf; the application has to start that server itself.
+`picows_initialize_project` links `picows` and `pico_stdlib` and selects the C++ linker. It does not change `BOARD` or `CMAKE_BUILD_TYPE`. `picows` and pico-ws-server are compiled as C++17, including when the parent project sets an older `CMAKE_CXX_STANDARD`. Link `picows_http` as well for the optional HTTP server. `PICOWS_ENABLE_IPERF` compiles lwIP iperf; the application has to start that server itself.
 
 `libpicows.a` contains picows, lwIP, and the TinyUSB device stack. It does not contain the Pico startup files. The application still links `pico_stdlib`. Do not also link the SDK's `tinyusb_device`.
 
@@ -83,7 +84,7 @@ See `NOTICE` for which license applies to which files.
 
 ## Usage Example
 
-Link `picows` (and `picows_http` only if you want the standalone HTTP server). The final link must use the C++ linker.
+Link `picows` (and `picows_http` only if you want the standalone HTTP server). The library is C++17. The final link must use the C++ linker.
 
 ```c
 #include <stdlib.h>

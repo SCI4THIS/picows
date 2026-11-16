@@ -75,8 +75,10 @@
 
 /*
  * One netif only: picows cannot share this lwIP instance with CYW43.
- * Active PCBs cover the HTTP server (PICOWS_MAX_HTTP_CONNS) and one WebSocket
- * server (PICOWS_MAX_WS_CONNS). Listeners use the listen pool.
+ * Active PCBs cover HTTP (PICOWS_MAX_HTTP_CONNS) and the WebSocket
+ * connections (PICOWS_MAX_WS_CONNS), shared by every server. The listen
+ * pool is two sockets: two WebSocket servers, or HTTP on its own port
+ * plus one WebSocket server.
  */
 #define LWIP_SINGLE_NETIF               1
 #define LWIP_NETIF_LINK_CALLBACK        1
