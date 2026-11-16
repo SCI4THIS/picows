@@ -1,0 +1,350 @@
+diff --git i/CMakeLists.txt w/CMakeLists.txt
+index cef4fba..256d214 100644
+--- i/CMakeLists.txt
++++ w/CMakeLists.txt
+@@ -12,6 +12,12 @@ set(STATIC_HTML_FILENAME "" CACHE PATH "Filename of static HTML file" PARENT_SCO
+ mark_as_advanced(STATIC_HTML_PATH)
+ mark_as_advanced(STATIC_HTML_FILENAME)
+ 
++option(
++  PICO_WS_SERVER_USE_CYW43
++  "Use Pico W CYW43 synchronization"
++  ON
++)
++
+ add_library(pico_ws_server
+   src/client_connection.cpp
+   src/http_handler.cpp
+@@ -22,38 +28,42 @@ add_library(pico_ws_server
+   src/web_socket_server_internal.cpp
+ )
+ 
+-if(NOT STATIC_HTML_PATH)
+-    message(FATAL_ERROR "STATIC_HTML_PATH must be set")
+-endif()
+-if(NOT STATIC_HTML_FILENAME)
+-    message(FATAL_ERROR "STATIC_HTML_FILENAME must be set")
+-endif()
+-
+ target_include_directories(pico_ws_server PUBLIC ${CMAKE_CURRENT_LIST_DIR}/include )
+ target_include_directories(pico_ws_server PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src )
+ target_include_directories(pico_ws_server PRIVATE ${PROJECT_BINARY_DIR})
+ 
+-target_compile_definitions(pico_ws_server PUBLIC DEBUG_PRINT=0)
++target_compile_definitions(pico_ws_server PUBLIC
++  DEBUG_PRINT=0
++  PICO_WS_SERVER_USE_CYW43=$<BOOL:${PICO_WS_SERVER_USE_CYW43}>
++)
+ 
+ target_link_libraries(pico_ws_server
+   pico_stdlib
+-  pico_cyw43_driver
+-  pico_lwip_nosys
+   pico_mbedtls
+   lwipopts_provider
+ )
+ 
+-add_custom_command(
+-    OUTPUT ${PROJECT_BINARY_DIR}/static_html_hex.h
+-    DEPENDS ${STATIC_HTML_PATH}
+-    COMMAND gzip --best -c ${STATIC_HTML_PATH}/${STATIC_HTML_FILENAME} > ${PROJECT_BINARY_DIR}/static.html.gz
+-    COMMAND ${CMAKE_COMMAND} -E echo "\\#ifndef STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
+-    COMMAND ${CMAKE_COMMAND} -E echo "\\#define STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
+-    COMMAND ${CMAKE_COMMAND} -E chdir ${PROJECT_BINARY_DIR} xxd -i static.html.gz >> ${PROJECT_BINARY_DIR}/static_html_hex.h
+-    COMMAND ${CMAKE_COMMAND} -E echo "\\#endif // STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
+-)
++if(PICO_WS_SERVER_USE_CYW43)
++  target_link_libraries(pico_ws_server
++    pico_cyw43_driver
++    pico_lwip_nosys
++  )
++endif()
+ 
+-add_custom_target(generate_static_html_hex ALL
+-    DEPENDS ${PROJECT_BINARY_DIR}/static_html_hex.h
+-)
+-add_dependencies(pico_ws_server generate_static_html_hex)
++if(STATIC_HTML_PATH AND STATIC_HTML_FILENAME)
++  target_compile_definitions(pico_ws_server PRIVATE PICO_WS_SERVER_HAS_STATIC_HTML_HEADER=1)
++  add_custom_command(
++      OUTPUT ${PROJECT_BINARY_DIR}/static_html_hex.h
++      DEPENDS ${STATIC_HTML_PATH}
++      COMMAND gzip --best -c ${STATIC_HTML_PATH}/${STATIC_HTML_FILENAME} > ${PROJECT_BINARY_DIR}/static.html.gz
++      COMMAND ${CMAKE_COMMAND} -E echo "\\#ifndef STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
++      COMMAND ${CMAKE_COMMAND} -E echo "\\#define STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
++      COMMAND ${CMAKE_COMMAND} -E chdir ${PROJECT_BINARY_DIR} xxd -i static.html.gz >> ${PROJECT_BINARY_DIR}/static_html_hex.h
++      COMMAND ${CMAKE_COMMAND} -E echo "\\#endif // STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
++  )
++
++  add_custom_target(generate_static_html_hex ALL
++      DEPENDS ${PROJECT_BINARY_DIR}/static_html_hex.h
++  )
++  add_dependencies(pico_ws_server generate_static_html_hex)
++endif()
+diff --git i/include/pico_ws_server/cyw43_guard.h w/include/pico_ws_server/cyw43_guard.h
+index b0eabb3..e8eed2d 100644
+--- i/include/pico_ws_server/cyw43_guard.h
++++ w/include/pico_ws_server/cyw43_guard.h
+@@ -1,6 +1,12 @@
+ #ifndef __PICO_WS_SERVER_CYW43_GUARD_H__
+ #define __PICO_WS_SERVER_CYW43_GUARD_H__
+ 
++#ifndef PICO_WS_SERVER_USE_CYW43
++#define PICO_WS_SERVER_USE_CYW43 1
++#endif
++
++#if PICO_WS_SERVER_USE_CYW43
++
+ #include "cyw43_config.h"
+ 
+ // RAII-style wrapper for cyw43 thread enter/exit.
+@@ -14,4 +20,21 @@ class Cyw43Guard {
+   }
+ };
+ 
++#else
++
++#ifndef cyw43_arch_lwip_check
++#define cyw43_arch_lwip_check() ((void)0)
++#endif
++
++class Cyw43Guard {
++  public:
++    Cyw43Guard() = default;
++    ~Cyw43Guard() = default;
++
++    Cyw43Guard(const Cyw43Guard&) = delete;
++    Cyw43Guard& operator=(const Cyw43Guard&) = delete;
++};
++
++#endif
++
+ #endif
+diff --git i/include/pico_ws_server/web_socket_server.h w/include/pico_ws_server/web_socket_server.h
+index 5b3e2ce..a4b4dce 100644
+--- i/include/pico_ws_server/web_socket_server.h
++++ w/include/pico_ws_server/web_socket_server.h
+@@ -40,6 +40,9 @@ class WebSocketServer {
+   // Default is false (Nagle's algorithm enabled).
+   void setTcpNoDelay(bool enabled);
+ 
++  // Configure static HTML buffer served on HTTP GET / requests.
++  void setStaticHtml(const uint8_t* buf, size_t len, bool is_gzipped = false);
++
+   // Send a TEXT message, payload must be a null-terminated string
+   bool sendMessage(uint32_t conn_id, const char* payload);
+   // Send a BINARY message
+diff --git i/src/client_connection.cpp w/src/client_connection.cpp
+index 670ca6a..c5e7480 100644
+--- i/src/client_connection.cpp
++++ w/src/client_connection.cpp
+@@ -4,7 +4,7 @@
+ #include <string.h>
+ #include <queue>
+ 
+-#include "cyw43_config.h"
++#include "pico_ws_server/cyw43_guard.h"
+ #include "lwip/pbuf.h"
+ #include "lwip/tcp.h"
+ 
+@@ -65,6 +65,18 @@ bool ClientConnection::onSent(uint16_t len) {
+   return http_handler.onSent(len);
+ }
+ 
++const uint8_t* ClientConnection::getStaticHtmlBuf() const {
++  return server.getStaticHtmlBuf();
++}
++
++size_t ClientConnection::getStaticHtmlLen() const {
++  return server.getStaticHtmlLen();
++}
++
++bool ClientConnection::isStaticHtmlGzipped() const {
++  return server.isStaticHtmlGzipped();
++}
++
+ void ClientConnection::onClose() {
+   server.onClose(this, http_handler.isUpgraded());
+ }
+diff --git i/src/client_connection.h w/src/client_connection.h
+index 8fa7f4f..8029e7d 100644
+--- i/src/client_connection.h
++++ w/src/client_connection.h
+@@ -41,6 +41,9 @@ class ClientConnection {
+   bool flushSend();
+   bool needsSentCallback();
+   bool onSent(uint16_t len);
++  const uint8_t* getStaticHtmlBuf() const;
++  size_t getStaticHtmlLen() const;
++  bool isStaticHtmlGzipped() const;
+ 
+  private:
+   WebSocketServerInternal& server;
+diff --git i/src/http_handler.cpp w/src/http_handler.cpp
+index b0ffdab..fe0298a 100644
+--- i/src/http_handler.cpp
++++ w/src/http_handler.cpp
+@@ -12,8 +12,10 @@
+ #include "client_connection.h"
+ #include "debug.h"
+ 
++#if defined(PICO_WS_SERVER_HAS_STATIC_HTML_HEADER) && PICO_WS_SERVER_HAS_STATIC_HTML_HEADER
+ // generated at build time -- see CMakeLists.txt
+ #include <static_html_hex.h>
++#endif
+ 
+ namespace {
+ 
+@@ -50,8 +52,10 @@ static constexpr const char BAD_METHOD_RESPONSE[] =
+ static constexpr const char HTML_RESPONSE_START[] =
+   "HTTP/1.1 200 OK\r\n"
+   "Connection: close\r\n"
+-  "Content-Type: text/html\r\n"
+-  "Content-Encoding: gzip\r\n"
++  "Content-Type: text/html\r\n";
++static constexpr const char HTML_GZIP_HEADER[] =
++  "Content-Encoding: gzip\r\n";
++static constexpr const char HTML_CONTENT_LEN_PREFIX[] =
+   "Content-Length: ";
+ static constexpr const char HTML_RESPONSE_END[] =
+   "\r\n\r\n";
+@@ -105,11 +109,34 @@ bool HTTPHandler::sendString(const char* s) {
+ }
+ 
+ bool HTTPHandler::sendHTML() {
++  const uint8_t* html_buf = connection.getStaticHtmlBuf();
++  size_t html_len = connection.getStaticHtmlLen();
++  bool is_gzipped = connection.isStaticHtmlGzipped();
++
++#if defined(PICO_WS_SERVER_HAS_STATIC_HTML_HEADER) && PICO_WS_SERVER_HAS_STATIC_HTML_HEADER
++  if (!html_buf || html_len == 0) {
++    html_buf = static_html_gz;
++    html_len = static_html_gz_len;
++    is_gzipped = true;
++  }
++#endif
++
++  if (!html_buf || html_len == 0) {
++    sendString(NOT_FOUND_RESPONSE);
++    return false;
++  }
++
+   if (!sendString(HTML_RESPONSE_START)) {
+     return false;
+   }
++  if (is_gzipped && !sendString(HTML_GZIP_HEADER)) {
++    return false;
++  }
++  if (!sendString(HTML_CONTENT_LEN_PREFIX)) {
++    return false;
++  }
+   char len_string[32];
+-  snprintf(len_string, sizeof(len_string), "%u", (unsigned int)static_html_gz_len);
++  snprintf(len_string, sizeof(len_string), "%u", (unsigned int)html_len);
+   if (!sendString(len_string)) {
+     return false;
+   }
+@@ -117,8 +144,12 @@ bool HTTPHandler::sendHTML() {
+     return false;
+   }
+ 
+-  size_t header_bytes = strlen(HTML_RESPONSE_START) + strlen(len_string) + strlen(HTML_RESPONSE_END);
+-  response_total_bytes = header_bytes + static_html_gz_len;
++  size_t header_bytes = strlen(HTML_RESPONSE_START) +
++                        (is_gzipped ? strlen(HTML_GZIP_HEADER) : 0) +
++                        strlen(HTML_CONTENT_LEN_PREFIX) +
++                        strlen(len_string) +
++                        strlen(HTML_RESPONSE_END);
++  response_total_bytes = header_bytes + html_len;
+   response_bytes_acked = 0;
+   response_committed = true;
+   serving_static_html = true;
+@@ -139,11 +170,20 @@ bool HTTPHandler::sendHTMLChunks() {
+     return true;
+   }
+ 
++  const uint8_t* html_buf = connection.getStaticHtmlBuf();
++  size_t html_len = connection.getStaticHtmlLen();
++#if defined(PICO_WS_SERVER_HAS_STATIC_HTML_HEADER) && PICO_WS_SERVER_HAS_STATIC_HTML_HEADER
++  if (!html_buf || html_len == 0) {
++    html_buf = static_html_gz;
++    html_len = static_html_gz_len;
++  }
++#endif
++
+   bool sent_any = false;
+-  while (static_html_offset < static_html_gz_len) {
+-    size_t remaining = static_html_gz_len - static_html_offset;
++  while (static_html_offset < html_len) {
++    size_t remaining = html_len - static_html_offset;
+     size_t chunk = remaining < HTML_CHUNK_SIZE ? remaining : HTML_CHUNK_SIZE;
+-    if (!send(static_html_gz + static_html_offset, chunk)) {
++    if (!send(html_buf + static_html_offset, chunk)) {
+       if (!sent_any) {
+         return false;
+       }
+@@ -155,7 +195,7 @@ bool HTTPHandler::sendHTMLChunks() {
+     connection.flushSend();
+   }
+ 
+-  if (static_html_offset >= static_html_gz_len) {
++  if (static_html_offset >= html_len) {
+     serving_static_html = false;
+   }
+ 
+diff --git i/src/web_socket_server.cpp w/src/web_socket_server.cpp
+index f44cf5e..026c4dd 100644
+--- i/src/web_socket_server.cpp
++++ w/src/web_socket_server.cpp
+@@ -39,6 +39,10 @@ void WebSocketServer::setTcpNoDelay(bool enabled) {
+   internal->setTcpNoDelay(enabled);
+ }
+ 
++void WebSocketServer::setStaticHtml(const uint8_t* buf, size_t len, bool is_gzipped) {
++  internal->setStaticHtml(buf, len, is_gzipped);
++}
++
+ bool WebSocketServer::sendMessage(uint32_t conn_id, const char* payload) {
+   return internal->sendMessage(conn_id, payload);
+ }
+diff --git i/src/web_socket_server_internal.cpp w/src/web_socket_server_internal.cpp
+index e341304..44675c0 100644
+--- i/src/web_socket_server_internal.cpp
++++ w/src/web_socket_server_internal.cpp
+@@ -2,7 +2,6 @@
+ 
+ #include <stdint.h>
+ 
+-#include "cyw43_config.h"
+ #include "lwip/tcp.h"
+ 
+ #include "client_connection.h"
+diff --git i/src/web_socket_server_internal.h w/src/web_socket_server_internal.h
+index 65ca3f9..9807b16 100644
+--- i/src/web_socket_server_internal.h
++++ w/src/web_socket_server_internal.h
+@@ -21,6 +21,14 @@ class WebSocketServerInternal {
+   void setMessageCallback(WebSocketServer::MessageCallback cb) { message_cb = cb; }
+   void setPongCallback(WebSocketServer::PongCallback cb) { pong_cb = cb; }
+   void setTcpNoDelay(bool enabled) { tcp_nodelay = enabled; }
++  void setStaticHtml(const uint8_t* buf, size_t len, bool is_gzipped) {
++    static_html_buf = buf;
++    static_html_len = len;
++    static_html_gzipped = is_gzipped;
++  }
++  const uint8_t* getStaticHtmlBuf() const { return static_html_buf; }
++  size_t getStaticHtmlLen() const { return static_html_len; }
++  bool isStaticHtmlGzipped() const { return static_html_gzipped; }
+ 
+   bool startListening(uint16_t port);
+   void popMessages();
+@@ -45,6 +53,9 @@ class WebSocketServerInternal {
+ 
+   uint32_t max_connections;
+   bool tcp_nodelay = false;
++  const uint8_t* static_html_buf = nullptr;
++  size_t static_html_len = 0;
++  bool static_html_gzipped = false;
+   WebSocketServer::ConnectCallback connect_cb = nullptr;
+   WebSocketServer::MessageCallback message_cb = nullptr;
+   WebSocketServer::CloseCallback close_cb = nullptr;

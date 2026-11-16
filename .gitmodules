@@ -1,0 +1,6 @@
+[submodule "submodules/pico-ws-server"]
+	path = submodules/pico-ws-server
+	url = https://github.com/cadouthat/pico-ws-server.git
+[submodule "submodules/pico-sdk"]
+	path = submodules/pico-sdk
+	url = https://github.com/raspberrypi/pico-sdk.git
