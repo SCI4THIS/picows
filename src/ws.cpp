@@ -436,8 +436,6 @@ static void ws_cull_run(void);
 extern "C" void picows_poll(void) {
   tud_task();
   sys_check_timeouts();
-  /* TCP callbacks have returned. Destroy servers they queued. */
-  ws_cull_run();
 
   for (size_t i = 0; i < picows_core.num_poll_fns; i++) {
     picows_core.poll_fns[i]();
@@ -449,9 +447,10 @@ struct picows_ws_st {
   uint16_t port;
   WebSocketServer server;
   bool initialized;
+  bool on_cull_list;
 
   explicit picows_ws_st(uint32_t max_conns)
-      : args{}, port(80), server(max_conns), initialized(false) {}
+      : args{}, port(80), server(max_conns), initialized(false), on_cull_list(false) {}
 };
 
 #define MAX_WS_INSTANCES 2
@@ -464,10 +463,14 @@ static struct picows_ws_global_st {
     .num_instances = 0,
 };
 
-/* Close from a user callback is queued. popMessages and the TCP callbacks
- * still use the server after that callback returns. */
+/* Close from a user callback enqueues a special SERVER_CLOSE message on the
+ * server's message queue and adds the server to ws_cull. While on ws_cull,
+ * incoming messages are blocked from being added to the message queue. Once
+ * popMessages hits the SERVER_CLOSE message, the server is marked ready for
+ * destruction and ws_cull_run() closes and destroys it. */
 static int ws_callback_depth;
 static picows_ws_t *ws_cull[MAX_WS_INSTANCES];
+static bool ws_cull_ready[MAX_WS_INSTANCES];
 static size_t ws_cull_count;
 static bool ws_culling;
 
@@ -483,7 +486,7 @@ picows_http_args(const picows_http_t *srv) {
 
 static void on_ws_connect(WebSocketServer &server, uint32_t conn_id) {
   auto *ws = static_cast<picows_ws_t *>(server.getCallbackExtra());
-  if (ws && ws->args.on_connect) {
+  if (ws && !ws->on_cull_list && ws->args.on_connect) {
     ws_callback_depth++;
     ws->args.on_connect(ws, conn_id, ws->args.user_data);
     ws_callback_depth--;
@@ -508,13 +511,26 @@ static void on_ws_message(WebSocketServer &server, uint32_t conn_id, const void 
   }
 }
 
+static void on_ws_server_close(WebSocketServer &server) {
+  auto *ws = static_cast<picows_ws_t *>(server.getCallbackExtra());
+  if (!ws) {
+    return;
+  }
+  for (size_t i = 0; i < ws_cull_count; i++) {
+    if (ws_cull[i] == ws) {
+      ws_cull_ready[i] = true;
+      break;
+    }
+  }
+}
+
 static void ws_poll_all(void) {
   for (size_t i = 0; i < picows_ws_global.num_instances; i++) {
     if (picows_ws_global.instances[i] && picows_ws_global.instances[i]->initialized) {
       picows_ws_global.instances[i]->server.popMessages();
     }
   }
-  /* Message callbacks have returned and popMessages is done with the servers. */
+  /* Message callbacks have returned and popMessages has processed any SERVER_CLOSE message. */
   ws_cull_run();
 }
 
@@ -561,6 +577,7 @@ extern "C" size_t picows_ws(const picows_ws_args_t *args, picows_ws_t *ws) {
   ws->server.setConnectCallback(on_ws_connect);
   ws->server.setCloseCallback(on_ws_close);
   ws->server.setMessageCallback(on_ws_message);
+  ws->server.setServerCloseCallback(on_ws_server_close);
   ws->server.setTcpNoDelay(ws->args.tcp_nodelay);
 
   if (!ws->server.startListening(ws->port)) {
@@ -589,6 +606,7 @@ static void ws_close_server_now(picows_ws_t *srv) {
   }
   picows_ws_global.num_instances = kept;
   srv->initialized = false;
+  srv->on_cull_list = false;
   srv->~picows_ws_st();
 }
 
@@ -599,7 +617,12 @@ static void ws_cull_add(picows_ws_t *srv) {
     }
   }
   if (ws_cull_count < MAX_WS_INSTANCES) {
-    ws_cull[ws_cull_count++] = srv;
+    /* Enqueue the special close message and block new messages before adding to the cull list. */
+    srv->on_cull_list = true;
+    srv->server.queueServerClose();
+    ws_cull[ws_cull_count] = srv;
+    ws_cull_ready[ws_cull_count] = false;
+    ws_cull_count++;
   }
 }
 
@@ -608,10 +631,21 @@ static void ws_cull_run(void) {
     return;
   }
   ws_culling = true;
-  while (ws_cull_count > 0) {
-    picows_ws_t *srv = ws_cull[--ws_cull_count];
-    ws_cull[ws_cull_count] = nullptr;
-    ws_close_server_now(srv);
+  size_t i = 0;
+  while (i < ws_cull_count) {
+    if (ws_cull_ready[i]) {
+      picows_ws_t *srv = ws_cull[i];
+      for (size_t j = i; j + 1 < ws_cull_count; j++) {
+        ws_cull[j] = ws_cull[j + 1];
+        ws_cull_ready[j] = ws_cull_ready[j + 1];
+      }
+      ws_cull_count--;
+      ws_cull[ws_cull_count] = nullptr;
+      ws_cull_ready[ws_cull_count] = false;
+      ws_close_server_now(srv);
+    } else {
+      i++;
+    }
   }
   ws_culling = false;
 }
@@ -635,8 +669,6 @@ extern "C" const picows_ws_args_t *picows_ws_args(const picows_ws_t *srv) {
 }
 
 extern "C" void picows_ws_poll(picows_ws_t *srv) {
-  /* A server queued by an earlier TCP callback is already off the stack. */
-  ws_cull_run();
   if (srv && srv->initialized) {
     srv->server.popMessages();
   }
@@ -644,7 +676,7 @@ extern "C" void picows_ws_poll(picows_ws_t *srv) {
 }
 
 extern "C" bool picows_ws_send_text(picows_ws_t *srv, uint32_t conn_id, const char *text) {
-  if (!srv || !srv->initialized) {
+  if (!srv || !srv->initialized || srv->on_cull_list) {
     return false;
   }
   return srv->server.sendMessage(conn_id, text);
@@ -652,28 +684,28 @@ extern "C" bool picows_ws_send_text(picows_ws_t *srv, uint32_t conn_id, const ch
 
 extern "C" bool picows_ws_send_binary(picows_ws_t *srv, uint32_t conn_id, const void *data,
                                       size_t len) {
-  if (!srv || !srv->initialized) {
+  if (!srv || !srv->initialized || srv->on_cull_list) {
     return false;
   }
   return srv->server.sendMessage(conn_id, data, len);
 }
 
 extern "C" bool picows_ws_broadcast_text(picows_ws_t *srv, const char *text) {
-  if (!srv || !srv->initialized) {
+  if (!srv || !srv->initialized || srv->on_cull_list) {
     return false;
   }
   return srv->server.broadcastMessage(text);
 }
 
 extern "C" bool picows_ws_broadcast_binary(picows_ws_t *srv, const void *data, size_t len) {
-  if (!srv || !srv->initialized) {
+  if (!srv || !srv->initialized || srv->on_cull_list) {
     return false;
   }
   return srv->server.broadcastMessage(data, len);
 }
 
 extern "C" bool picows_ws_close(picows_ws_t *srv, uint32_t conn_id) {
-  if (!srv || !srv->initialized) {
+  if (!srv || !srv->initialized || srv->on_cull_list) {
     return false;
   }
   return srv->server.close(conn_id);

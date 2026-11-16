@@ -20,8 +20,7 @@
 typedef struct http_conn_state_st {
   struct tcp_pcb *pcb;
   picows_http_t *srv;
-  char req[PICOWS_HTTP_REQ_CAP];
-  size_t req_len;
+  picows_http_parser_t parser;
   bool headers_done;
   uint8_t idle_polls;
   char hdr[192];
@@ -227,7 +226,7 @@ static err_t http_on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *pb, err_t
   picows_http_parse_status_t parsed = PICOWS_HTTP_PARSE_NEED_MORE;
   if (!st->headers_done) {
     for (struct pbuf *q = pb; q != NULL; q = q->next) {
-      parsed = picows_http_parse_feed(st->req, sizeof(st->req), &st->req_len, (const uint8_t *)q->payload,
+      parsed = picows_http_parse_feed(&st->parser, PICOWS_HTTP_REQ_CAP, (const uint8_t *)q->payload,
                                       q->len);
       if (parsed != PICOWS_HTTP_PARSE_NEED_MORE) {
         break;

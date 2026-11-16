@@ -17,43 +17,42 @@ static void check(int cond, const char *what, int line) {
 
 #define CHECK(c) check((c), #c, __LINE__)
 
-static void feed_str(char *buf, size_t *len, const char *s, picows_http_parse_status_t expect) {
+static void feed_str(picows_http_parser_t *parser, const char *s, picows_http_parse_status_t expect) {
   picows_http_parse_status_t st =
-      picows_http_parse_feed(buf, PICOWS_HTTP_REQ_CAP, len, (const uint8_t *)s, strlen(s));
+      picows_http_parse_feed(parser, PICOWS_HTTP_REQ_CAP, (const uint8_t *)s, strlen(s));
   CHECK(st == expect);
 }
 
 static void test_split_headers(void) {
-  char buf[PICOWS_HTTP_REQ_CAP];
-  size_t len = 0;
-  feed_str(buf, &len, "GET / HT", PICOWS_HTTP_PARSE_NEED_MORE);
-  feed_str(buf, &len, "TP/1.1\r\nHost: x\r\n", PICOWS_HTTP_PARSE_NEED_MORE);
-  feed_str(buf, &len, "\r\n", PICOWS_HTTP_PARSE_GET_ROOT);
+  picows_http_parser_t parser = {0};
+  feed_str(&parser, "GET / HT", PICOWS_HTTP_PARSE_NEED_MORE);
+  feed_str(&parser, "TP/1.1\r\nHost: x\r\n", PICOWS_HTTP_PARSE_NEED_MORE);
+  feed_str(&parser, "\r\n", PICOWS_HTTP_PARSE_GET_ROOT);
 }
 
 static void test_terminator_split(void) {
-  char buf[PICOWS_HTTP_REQ_CAP];
-  size_t len = 0;
-  feed_str(buf, &len, "GET / HTTP/1.1\r\n\r", PICOWS_HTTP_PARSE_NEED_MORE);
-  feed_str(buf, &len, "\n", PICOWS_HTTP_PARSE_GET_ROOT);
+  picows_http_parser_t parser = {0};
+  feed_str(&parser, "GET / HTTP/1.1\r\n\r", PICOWS_HTTP_PARSE_NEED_MORE);
+  feed_str(&parser, "\n", PICOWS_HTTP_PARSE_GET_ROOT);
+  /* Also test "\r\r\n\r\n" where a double CR resets crlf_state to 1 */
+  memset(&parser, 0, sizeof(parser));
+  feed_str(&parser, "GET / HTTP/1.1\r\r\n\r\n", PICOWS_HTTP_PARSE_GET_ROOT);
 }
 
 static void test_not_found(void) {
-  char buf[PICOWS_HTTP_REQ_CAP];
-  size_t len = 0;
-  feed_str(buf, &len, "POST / HTTP/1.1\r\n\r\n", PICOWS_HTTP_PARSE_NOT_FOUND);
-  len = 0;
-  feed_str(buf, &len, "GET /other HTTP/1.1\r\n\r\n", PICOWS_HTTP_PARSE_NOT_FOUND);
+  picows_http_parser_t parser = {0};
+  feed_str(&parser, "POST / HTTP/1.1\r\n\r\n", PICOWS_HTTP_PARSE_NOT_FOUND);
+  memset(&parser, 0, sizeof(parser));
+  feed_str(&parser, "GET /other HTTP/1.1\r\n\r\n", PICOWS_HTTP_PARSE_NOT_FOUND);
 }
 
 static void test_too_large(void) {
-  char buf[PICOWS_HTTP_REQ_CAP];
-  size_t len = 0;
+  picows_http_parser_t parser = {0};
   char chunk[64];
   memset(chunk, 'A', sizeof(chunk));
   picows_http_parse_status_t st = PICOWS_HTTP_PARSE_NEED_MORE;
   while (st == PICOWS_HTTP_PARSE_NEED_MORE) {
-    st = picows_http_parse_feed(buf, PICOWS_HTTP_REQ_CAP, &len, (const uint8_t *)chunk,
+    st = picows_http_parse_feed(&parser, PICOWS_HTTP_REQ_CAP, (const uint8_t *)chunk,
                                 sizeof(chunk));
   }
   CHECK(st == PICOWS_HTTP_PARSE_TOO_LARGE);

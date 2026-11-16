@@ -1,7 +1,6 @@
-diff -ruN /tmp/pws-base/CMakeLists.txt /tmp/pws-work/CMakeLists.txt
-diff --git a/CMakeLists.txt	2026-11-16 01:52:08.286730726 +0000 b/CMakeLists.txt	2026-11-16 02:59:10.353644996 +0000
---- a/CMakeLists.txt	2026-11-16 01:52:08.286730726 +0000
-+++ b/CMakeLists.txt	2026-11-16 02:59:10.353644996 +0000
+diff -ruN a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt	2026-11-16 13:00:20.336545901 +0000
++++ b/CMakeLists.txt	2026-11-16 13:00:20.340756092 +0000
 @@ -1,18 +1,27 @@
  cmake_minimum_required(VERSION 3.13)
  
@@ -40,19 +39,18 @@ diff --git a/CMakeLists.txt	2026-11-16 01:52:08.286730726 +0000 b/CMakeLists.txt
 @@ -22,38 +31,48 @@
    src/web_socket_server_internal.cpp
  )
-
-+set_target_properties(pico_ws_server PROPERTIES
-+  CXX_STANDARD 17
-+  CXX_STANDARD_REQUIRED YES
-+)
-+
+ 
 -if(NOT STATIC_HTML_PATH)
 -    message(FATAL_ERROR "STATIC_HTML_PATH must be set")
 -endif()
 -if(NOT STATIC_HTML_FILENAME)
 -    message(FATAL_ERROR "STATIC_HTML_FILENAME must be set")
 -endif()
--
++set_target_properties(pico_ws_server PROPERTIES
++  CXX_STANDARD 17
++  CXX_STANDARD_REQUIRED YES
++)
+ 
  target_include_directories(pico_ws_server PUBLIC ${CMAKE_CURRENT_LIST_DIR}/include )
  target_include_directories(pico_ws_server PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src )
  target_include_directories(pico_ws_server PRIVATE ${PROJECT_BINARY_DIR})
@@ -114,10 +112,9 @@ diff --git a/CMakeLists.txt	2026-11-16 01:52:08.286730726 +0000 b/CMakeLists.txt
 +  )
 +  add_dependencies(pico_ws_server generate_static_html_hex)
 +endif()
-diff -ruN /tmp/pws-base/include/pico_ws_server/cyw43_guard.h /tmp/pws-work/include/pico_ws_server/cyw43_guard.h
-diff --git a/include/pico_ws_server/cyw43_guard.h	2026-11-16 01:52:08.288489177 +0000 b/include/pico_ws_server/cyw43_guard.h	2026-11-16 02:55:46.008938695 +0000
---- a/include/pico_ws_server/cyw43_guard.h	2026-11-16 01:52:08.288489177 +0000
-+++ b/include/pico_ws_server/cyw43_guard.h	2026-11-16 02:55:46.008938695 +0000
+diff -ruN a/include/pico_ws_server/cyw43_guard.h b/include/pico_ws_server/cyw43_guard.h
+--- a/include/pico_ws_server/cyw43_guard.h	2026-11-16 13:00:20.337381823 +0000
++++ b/include/pico_ws_server/cyw43_guard.h	2026-11-16 13:00:20.339754795 +0000
 @@ -1,6 +1,12 @@
  #ifndef __PICO_WS_SERVER_CYW43_GUARD_H__
  #define __PICO_WS_SERVER_CYW43_GUARD_H__
@@ -153,11 +150,36 @@ diff --git a/include/pico_ws_server/cyw43_guard.h	2026-11-16 01:52:08.288489177 
 +#endif
 +
  #endif
-diff -ruN /tmp/pws-base/include/pico_ws_server/web_socket_server.h /tmp/pws-work/include/pico_ws_server/web_socket_server.h
-diff --git a/include/pico_ws_server/web_socket_server.h	2026-11-16 01:52:08.288529886 +0000 b/include/pico_ws_server/web_socket_server.h	2026-11-16 02:55:46.008952070 +0000
---- a/include/pico_ws_server/web_socket_server.h	2026-11-16 01:52:08.288529886 +0000
-+++ b/include/pico_ws_server/web_socket_server.h	2026-11-16 02:55:46.008952070 +0000
-@@ -40,6 +40,9 @@
+diff -ruN a/include/pico_ws_server/web_socket_server.h b/include/pico_ws_server/web_socket_server.h
+--- a/include/pico_ws_server/web_socket_server.h	2026-11-16 13:00:20.337434031 +0000
++++ b/include/pico_ws_server/web_socket_server.h	2026-11-16 13:00:20.339806337 +0000
+@@ -15,6 +15,7 @@
+   typedef void (*MessageCallback)(WebSocketServer& server, uint32_t conn_id, const void *data, size_t len);
+   typedef void (*CloseCallback)(WebSocketServer& server, uint32_t conn_id);
+   typedef void (*PongCallback)(WebSocketServer& server, uint32_t conn_id, const void *data, size_t len);
++  typedef void (*ServerCloseCallback)(WebSocketServer& server);
+ 
+   WebSocketServer(uint32_t max_connections = 1);
+   ~WebSocketServer();
+@@ -28,6 +29,7 @@
+   void setMessageCallback(MessageCallback cb);
+   // PONG callback runs in the same context as message callback (cyw43 lock held, not ISR)
+   void setPongCallback(PongCallback cb);
++  void setServerCloseCallback(ServerCloseCallback cb);
+   void setCallbackExtra(void* arg);
+   void* getCallbackExtra();
+ 
+@@ -35,11 +37,19 @@
+   // Must be called routinely to process incoming messages (triggers message callback)
+   void popMessages();
+ 
++  // Enqueue a special server-close message on the message queue and block further incoming messages.
++  // If no connections are active, invokes the ServerCloseCallback at the end of popMessages().
++  void queueServerClose();
++  bool isServerCloseQueued() const;
++
+   // Set TCP_NODELAY option to disable Nagle's algorithm for lower latency.
+   // Call this before startListening() or after connections are established.
    // Default is false (Nagle's algorithm enabled).
    void setTcpNoDelay(bool enabled);
  
@@ -167,10 +189,9 @@ diff --git a/include/pico_ws_server/web_socket_server.h	2026-11-16 01:52:08.2885
    // Send a TEXT message, payload must be a null-terminated string
    bool sendMessage(uint32_t conn_id, const char* payload);
    // Send a BINARY message
-diff -ruN /tmp/pws-base/src/client_connection.cpp /tmp/pws-work/src/client_connection.cpp
-diff --git a/src/client_connection.cpp	2026-11-16 01:52:08.288529886 +0000 b/src/client_connection.cpp	2026-11-16 02:59:10.264644248 +0000
---- a/src/client_connection.cpp	2026-11-16 01:52:08.288529886 +0000
-+++ b/src/client_connection.cpp	2026-11-16 02:59:10.264644248 +0000
+diff -ruN a/src/client_connection.cpp b/src/client_connection.cpp
+--- a/src/client_connection.cpp	2026-11-16 13:00:20.337608699 +0000
++++ b/src/client_connection.cpp	2026-11-16 13:00:20.340460840 +0000
 @@ -4,7 +4,7 @@
  #include <string.h>
  #include <queue>
@@ -180,7 +201,28 @@ diff --git a/src/client_connection.cpp	2026-11-16 01:52:08.288529886 +0000 b/src
  #include "lwip/pbuf.h"
  #include "lwip/tcp.h"
  
-@@ -65,6 +65,18 @@
+@@ -13,8 +13,19 @@
+ 
+ void ClientConnection::popMessages() {
+   while (!message_queue.empty()) {
+-    server.onMessage(this, message_queue.front().getPayload(), message_queue.front().getPayloadSize());
++    WebSocketMessage msg = std::move(message_queue.front());
+     message_queue.pop();
++    if (msg.getType() == WebSocketMessage::SERVER_CLOSE) {
++      while (!message_queue.empty()) {
++        message_queue.pop();
++      }
++      server.onServerCloseMessage();
++      return;
++    }
++    server.onMessage(this, msg.getPayload(), msg.getPayloadSize());
++    if (server.isServerCloseDelivered()) {
++      return;
++    }
+   }
+ }
+ 
+@@ -65,6 +76,18 @@
    return http_handler.onSent(len);
  }
  
@@ -199,7 +241,28 @@ diff --git a/src/client_connection.cpp	2026-11-16 01:52:08.288529886 +0000 b/src
  void ClientConnection::onClose() {
    server.onClose(this, http_handler.isUpgraded());
  }
-@@ -117,6 +129,20 @@
+@@ -74,9 +97,20 @@
+ }
+ 
+ void ClientConnection::processWebSocketMessage(WebSocketMessage&& message) {
++  if (block_messages || server.isServerCloseQueued()) {
++    return;
++  }
+   message_queue.push(std::move(message));
+ }
+ 
++void ClientConnection::queueServerCloseMessage() {
++  if (block_messages) {
++    return;
++  }
++  block_messages = true;
++  message_queue.push(WebSocketMessage(WebSocketMessage::SERVER_CLOSE, nullptr, 0));
++}
++
+ void ClientConnection::processWebSocketPong(const void* payload, size_t size) {
+   server.onPong(this, payload, size);
+ }
+@@ -117,6 +151,20 @@
    return sendWebSocketBinaryMessage(payload, size);
  }
  
@@ -220,11 +283,19 @@ diff --git a/src/client_connection.cpp	2026-11-16 01:52:08.288529886 +0000 b/src
  bool ClientConnection::close() {
    if (!http_handler.isUpgraded()) {
      return false;
-diff -ruN /tmp/pws-base/src/client_connection.h /tmp/pws-work/src/client_connection.h
-diff --git a/src/client_connection.h	2026-11-16 01:52:08.288656010 +0000 b/src/client_connection.h	2026-11-16 02:59:10.263644239 +0000
---- a/src/client_connection.h	2026-11-16 01:52:08.288656010 +0000
-+++ b/src/client_connection.h	2026-11-16 02:59:10.263644239 +0000
-@@ -34,6 +34,8 @@
+diff -ruN a/src/client_connection.h b/src/client_connection.h
+--- a/src/client_connection.h	2026-11-16 13:00:20.337657908 +0000
++++ b/src/client_connection.h	2026-11-16 13:00:20.340507299 +0000
+@@ -25,6 +25,8 @@
+ 
+   void processWebSocketMessage(WebSocketMessage&& message);
+   void processWebSocketPong(const void* payload, size_t size);
++  void queueServerCloseMessage();
++  bool isMessageBlocked() const { return block_messages; }
+ 
+   bool sendWebSocketTextMessage(const char* payload);
+   bool sendWebSocketBinaryMessage(const void* payload, size_t size);
+@@ -34,6 +36,8 @@
    bool sendWebSocketMessage(const void* payload, size_t size);
  
    bool close();
@@ -233,7 +304,7 @@ diff --git a/src/client_connection.h	2026-11-16 01:52:08.288656010 +0000 b/src/c
  
    void popMessages();
    bool process(struct pbuf* pb);
-@@ -41,6 +43,9 @@
+@@ -41,6 +45,9 @@
    bool flushSend();
    bool needsSentCallback();
    bool onSent(uint16_t len);
@@ -243,10 +314,17 @@ diff --git a/src/client_connection.h	2026-11-16 01:52:08.288656010 +0000 b/src/c
  
   private:
    WebSocketServerInternal& server;
-diff -ruN /tmp/pws-base/src/http_handler.cpp /tmp/pws-work/src/http_handler.cpp
-diff --git a/src/http_handler.cpp	2026-11-16 01:52:08.288656010 +0000 b/src/http_handler.cpp	2026-11-16 02:55:46.008982904 +0000
---- a/src/http_handler.cpp	2026-11-16 01:52:08.288656010 +0000
-+++ b/src/http_handler.cpp	2026-11-16 02:55:46.008982904 +0000
+@@ -49,6 +56,7 @@
+   WebSocketHandler ws_handler;
+ 
+   std::queue<WebSocketMessage> message_queue;
++  bool block_messages = false;
+ };
+ 
+ #endif
+diff -ruN a/src/http_handler.cpp b/src/http_handler.cpp
+--- a/src/http_handler.cpp	2026-11-16 13:00:20.337751658 +0000
++++ b/src/http_handler.cpp	2026-11-16 13:00:20.340553716 +0000
 @@ -12,8 +12,10 @@
  #include "client_connection.h"
  #include "debug.h"
@@ -355,11 +433,42 @@ diff --git a/src/http_handler.cpp	2026-11-16 01:52:08.288656010 +0000 b/src/http
      serving_static_html = false;
    }
  
-diff -ruN /tmp/pws-base/src/web_socket_server.cpp /tmp/pws-work/src/web_socket_server.cpp
-diff --git a/src/web_socket_server.cpp	2026-11-16 01:52:08.288730718 +0000 b/src/web_socket_server.cpp	2026-11-16 02:55:46.008993571 +0000
---- a/src/web_socket_server.cpp	2026-11-16 01:52:08.288730718 +0000
-+++ b/src/web_socket_server.cpp	2026-11-16 02:55:46.008993571 +0000
-@@ -39,6 +39,10 @@
+diff -ruN a/src/web_socket_message.h b/src/web_socket_message.h
+--- a/src/web_socket_message.h	2026-11-16 13:00:20.338082952 +0000
++++ b/src/web_socket_message.h	2026-11-16 13:00:20.340320298 +0000
+@@ -19,6 +19,7 @@
+     CLOSE = 0x08,
+     PING = 0x09,
+     PONG = 0x0A,
++    SERVER_CLOSE = 0xFF,
+   };
+ 
+   WebSocketMessage(Type type, const void* payload, size_t payload_size)
+diff -ruN a/src/web_socket_server.cpp b/src/web_socket_server.cpp
+--- a/src/web_socket_server.cpp	2026-11-16 13:00:20.338230203 +0000
++++ b/src/web_socket_server.cpp	2026-11-16 13:00:20.340600508 +0000
+@@ -21,6 +21,9 @@
+ void WebSocketServer::setPongCallback(PongCallback cb) {
+   internal->setPongCallback(cb);
+ }
++void WebSocketServer::setServerCloseCallback(ServerCloseCallback cb) {
++  internal->setServerCloseCallback(cb);
++}
+ void WebSocketServer::setCallbackExtra(void* arg) {
+   callback_extra = arg;
+ }
+@@ -34,11 +37,21 @@
+ void WebSocketServer::popMessages() {
+   internal->popMessages();
+ }
++void WebSocketServer::queueServerClose() {
++  internal->queueServerClose();
++}
++bool WebSocketServer::isServerCloseQueued() const {
++  return internal->isServerCloseQueued();
++}
+ 
+ void WebSocketServer::setTcpNoDelay(bool enabled) {
    internal->setTcpNoDelay(enabled);
  }
  
@@ -370,10 +479,9 @@ diff --git a/src/web_socket_server.cpp	2026-11-16 01:52:08.288730718 +0000 b/src
  bool WebSocketServer::sendMessage(uint32_t conn_id, const char* payload) {
    return internal->sendMessage(conn_id, payload);
  }
-diff -ruN /tmp/pws-base/src/web_socket_server_internal.cpp /tmp/pws-work/src/web_socket_server_internal.cpp
-diff --git a/src/web_socket_server_internal.cpp	2026-11-16 01:52:08.288730718 +0000 b/src/web_socket_server_internal.cpp	2026-11-16 02:59:10.262644231 +0000
---- a/src/web_socket_server_internal.cpp	2026-11-16 01:52:08.288730718 +0000
-+++ b/src/web_socket_server_internal.cpp	2026-11-16 02:59:10.262644231 +0000
+diff -ruN a/src/web_socket_server_internal.cpp b/src/web_socket_server_internal.cpp
+--- a/src/web_socket_server_internal.cpp	2026-11-16 13:00:20.338278286 +0000
++++ b/src/web_socket_server_internal.cpp	2026-11-16 13:00:20.340646342 +0000
 @@ -2,7 +2,6 @@
  
  #include <stdint.h>
@@ -407,11 +515,88 @@ diff --git a/src/web_socket_server_internal.cpp	2026-11-16 01:52:08.288730718 +0
  bool WebSocketServerInternal::startListening(uint16_t port) {
    Cyw43Guard guard;
  
-diff -ruN /tmp/pws-base/src/web_socket_server_internal.h /tmp/pws-work/src/web_socket_server_internal.h
-diff --git a/src/web_socket_server_internal.h	2026-11-16 01:52:08.288730718 +0000 b/src/web_socket_server_internal.h	2026-11-16 02:59:10.266089343 +0000
---- a/src/web_socket_server_internal.h	2026-11-16 01:52:08.288730718 +0000
-+++ b/src/web_socket_server_internal.h	2026-11-16 02:59:10.266089343 +0000
-@@ -15,12 +15,21 @@
+@@ -193,6 +210,32 @@
+ 
+   for (const auto& [_, conn] : connection_by_id) {
+     conn->popMessages();
++    if (server_close_delivered) {
++      return;
++    }
++  }
++  if (server_close_queued && !server_close_delivered) {
++    onServerCloseMessage();
++  }
++}
++
++void WebSocketServerInternal::queueServerClose() {
++  if (server_close_queued) {
++    return;
++  }
++  server_close_queued = true;
++  for (const auto& [_, conn] : connection_by_id) {
++    conn->queueServerCloseMessage();
++  }
++}
++
++void WebSocketServerInternal::onServerCloseMessage() {
++  if (server_close_delivered) {
++    return;
++  }
++  server_close_delivered = true;
++  if (server_close_cb) {
++    server_close_cb(server);
+   }
+ }
+ 
+@@ -289,7 +332,7 @@
+ ClientConnection* WebSocketServerInternal::onConnect(struct tcp_pcb* pcb) {
+   cyw43_arch_lwip_check();
+ 
+-  if (connection_by_id.size() >= max_connections) {
++  if (server_close_queued || connection_by_id.size() >= max_connections) {
+     return nullptr;
+   }
+ 
+@@ -310,7 +353,7 @@
+ void WebSocketServerInternal::onUpgrade(ClientConnection* connection) {
+   cyw43_arch_lwip_check();
+ 
+-  if (connect_cb) {
++  if (connect_cb && !server_close_queued && !server_close_delivered) {
+     connect_cb(server, getConnectionId(connection));
+   }
+ }
+@@ -320,7 +363,7 @@
+ 
+   uint32_t conn_id = getConnectionId(connection);
+ 
+-  if (is_upgraded && close_cb) {
++  if (is_upgraded && close_cb && !server_close_delivered) {
+     close_cb(server, conn_id);
+   }
+ 
+@@ -330,7 +373,7 @@
+ void WebSocketServerInternal::onMessage(ClientConnection* connection, const void* payload, size_t size) {
+   cyw43_arch_lwip_check();
+ 
+-  if (message_cb) {
++  if (message_cb && !server_close_delivered) {
+     message_cb(server, getConnectionId(connection), payload, size);
+   }
+ }
+@@ -338,7 +381,7 @@
+ void WebSocketServerInternal::onPong(ClientConnection* connection, const void* payload, size_t size) {
+   cyw43_arch_lwip_check();
+ 
+-  if (pong_cb) {
++  if (pong_cb && !server_close_delivered) {
+     pong_cb(server, getConnectionId(connection), payload, size);
+   }
+ }
+diff -ruN a/src/web_socket_server_internal.h b/src/web_socket_server_internal.h
+--- a/src/web_socket_server_internal.h	2026-11-16 13:00:20.338325245 +0000
++++ b/src/web_socket_server_internal.h	2026-11-16 13:00:20.340693342 +0000
+@@ -15,15 +15,29 @@
   public:
    WebSocketServerInternal(WebSocketServer& server, uint32_t max_connections)
        : server(server), max_connections(max_connections) {}
@@ -421,6 +606,7 @@ diff --git a/src/web_socket_server_internal.h	2026-11-16 01:52:08.288730718 +000
    void setCloseCallback(WebSocketServer::CloseCallback cb) { close_cb = cb; }
    void setMessageCallback(WebSocketServer::MessageCallback cb) { message_cb = cb; }
    void setPongCallback(WebSocketServer::PongCallback cb) { pong_cb = cb; }
++  void setServerCloseCallback(WebSocketServer::ServerCloseCallback cb) { server_close_cb = cb; }
    void setTcpNoDelay(bool enabled) { tcp_nodelay = enabled; }
 +  void setStaticHtml(const uint8_t* buf, size_t len, bool is_gzipped) {
 +    static_html_buf = buf;
@@ -433,7 +619,14 @@ diff --git a/src/web_socket_server_internal.h	2026-11-16 01:52:08.288730718 +000
  
    bool startListening(uint16_t port);
    void popMessages();
-@@ -45,6 +54,9 @@
++  void queueServerClose();
++  bool isServerCloseQueued() const { return server_close_queued; }
++  bool isServerCloseDelivered() const { return server_close_delivered; }
++  void onServerCloseMessage();
+ 
+   bool sendMessage(uint32_t conn_id, const char* payload);
+   bool sendMessage(uint32_t conn_id, const void* payload, size_t payload_size);
+@@ -45,10 +59,16 @@
  
    uint32_t max_connections;
    bool tcp_nodelay = false;
@@ -443,3 +636,10 @@ diff --git a/src/web_socket_server_internal.h	2026-11-16 01:52:08.288730718 +000
    WebSocketServer::ConnectCallback connect_cb = nullptr;
    WebSocketServer::MessageCallback message_cb = nullptr;
    WebSocketServer::CloseCallback close_cb = nullptr;
+   WebSocketServer::PongCallback pong_cb = nullptr;
++  WebSocketServer::ServerCloseCallback server_close_cb = nullptr;
++  bool server_close_queued = false;
++  bool server_close_delivered = false;
+ 
+   struct tcp_pcb* listen_pcb = nullptr;
+   std::unordered_map<uint32_t, std::unique_ptr<ClientConnection>> connection_by_id;

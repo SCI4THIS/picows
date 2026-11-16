@@ -5,8 +5,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Room for a request line and browser headers, including the terminating NUL. */
+/* Maximum total HTTP request header block size before "\r\n\r\n". */
 #define PICOWS_HTTP_REQ_CAP 4096
+
+/* Streaming parser state (~12 bytes instead of buffering all 4096 bytes). */
+typedef struct picows_http_parser_st {
+  size_t total_len;
+  char prefix[6];     /* First 6 bytes of request line (to match "GET / ") */
+  uint8_t prefix_len;
+  uint8_t crlf_state; /* 0..4 tracking "\r\n\r\n" */
+} picows_http_parser_t;
 
 typedef enum picows_http_parse_status {
   PICOWS_HTTP_PARSE_NEED_MORE = 0,
@@ -16,11 +24,12 @@ typedef enum picows_http_parse_status {
 } picows_http_parse_status_t;
 
 /*
- * Append data to buf. Headers may span calls. *len is the stored byte count.
- * GET_ROOT means the request line starts with "GET / ".
+ * Feed incoming TCP segment bytes directly without copying the full header block.
+ * Headers may span calls.
+ * GET_ROOT means the request line starts with "GET / " and "\r\n\r\n" was reached.
  * TOO_LARGE means the header block exceeded cap before "\r\n\r\n".
  */
-picows_http_parse_status_t picows_http_parse_feed(char *buf, size_t cap, size_t *len,
+picows_http_parse_status_t picows_http_parse_feed(picows_http_parser_t *parser, size_t cap,
                                                   const uint8_t *data, size_t data_len);
 
 #endif
