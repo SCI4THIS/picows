@@ -6,29 +6,37 @@ include(ExternalProject)
 #   rp2350-arm    Arm Cortex-M33   (Pico 2)
 #   rp2350-riscv  Hazard3 RISC-V   (Pico 2)
 #
-# RISC-V needs riscv-none-elf-gcc, riscv32-unknown-elf-gcc, or
-# riscv32-pico-elf-gcc on PATH. Pass -DPICO_TOOLCHAIN_PATH= if it lives
-# outside the default search path.
+# Each architecture is dynamically included in the build only if its
+# corresponding cross-compiler toolchain is detected.
+
+find_program(PICOWS_ARM_GCC
+  NAMES arm-none-eabi-gcc
+)
 
 find_program(PICOWS_RISCV_GCC
-  NAMES riscv-none-elf-gcc riscv32-unknown-elf-gcc riscv32-pico-elf-gcc
+  NAMES riscv32-corev-elf-gcc riscv32-pico-elf-gcc riscv32-unknown-elf-gcc riscv-none-elf-gcc
 )
+
 set(PICOWS_RISCV_TOOLCHAIN_ARGS "")
 if(PICOWS_RISCV_GCC)
   get_filename_component(_picows_riscv_bin "${PICOWS_RISCV_GCC}" DIRECTORY)
   get_filename_component(PICOWS_RISCV_TOOLCHAIN_ROOT "${_picows_riscv_bin}" DIRECTORY)
   set(PICOWS_RISCV_TOOLCHAIN_ARGS "-DPICO_TOOLCHAIN_PATH=${PICOWS_RISCV_TOOLCHAIN_ROOT}")
-else()
-  message(WARNING
-    "No RISC-V GCC was found (riscv-none-elf-gcc / riscv32-unknown-elf-gcc / riscv32-pico-elf-gcc). "
-    "The rp2350-riscv libraries will fail to configure until one is installed.")
 endif()
 
 function(picows_add_arch folder board)
   string(REPLACE "-" "_" target "${folder}")
   set(extra_args "")
   if(folder STREQUAL "rp2350-riscv" AND PICOWS_RISCV_TOOLCHAIN_ARGS)
-    set(extra_args "${PICOWS_RISCV_TOOLCHAIN_ARGS}")
+    list(APPEND extra_args "${PICOWS_RISCV_TOOLCHAIN_ARGS}")
+  endif()
+  if(DEFINED PICOTOOL_FETCH_FROM_GIT_PATH)
+    list(APPEND extra_args "-DPICOTOOL_FETCH_FROM_GIT_PATH=${PICOTOOL_FETCH_FROM_GIT_PATH}")
+  elseif(DEFINED ENV{PICOTOOL_FETCH_FROM_GIT_PATH})
+    list(APPEND extra_args "-DPICOTOOL_FETCH_FROM_GIT_PATH=$ENV{PICOTOOL_FETCH_FROM_GIT_PATH}")
+  endif()
+  if(DEFINED picotool_DIR)
+    list(APPEND extra_args "-Dpicotool_DIR=${picotool_DIR}")
   endif()
   ExternalProject_Add(picows_${target}
     SOURCE_DIR "${PICOWS_ROOT}"
@@ -48,9 +56,34 @@ function(picows_add_arch folder board)
   )
 endfunction()
 
-picows_add_arch(rp2040 raspberry_pi_pico)
-picows_add_arch(rp2350-arm raspberry_pi_pico2)
-picows_add_arch(rp2350-riscv raspberry_pi_pico2_riscv)
+if(PICOWS_ARM_GCC)
+  message(STATUS "Found ARM toolchain (${PICOWS_ARM_GCC}): enabling rp2040 and rp2350-arm builds")
+  picows_add_arch(rp2040 raspberry_pi_pico)
+  picows_add_arch(rp2350-arm raspberry_pi_pico2)
+else()
+  message(WARNING
+    "No ARM bare-metal GCC (arm-none-eabi-gcc) was found on PATH; skipping rp2040 and rp2350-arm builds.\n"
+    "To acquire it on Arch Linux / Omarchy:\n"
+    "  yay -S --needed gcc-arm-none-eabi-bin\n"
+    "Or on x86_64 Arch:\n"
+    "  sudo pacman -S --needed arm-none-eabi-gcc arm-none-eabi-newlib arm-none-eabi-binutils")
+endif()
+
+if(PICOWS_RISCV_GCC)
+  message(STATUS "Found RISC-V toolchain (${PICOWS_RISCV_GCC}): enabling rp2350-riscv build")
+  picows_add_arch(rp2350-riscv raspberry_pi_pico2_riscv)
+else()
+  message(STATUS
+    "No RISC-V GCC (riscv32-corev-elf-gcc / riscv32-pico-elf-gcc / riscv32-unknown-elf-gcc / riscv-none-elf-gcc) "
+    "was found on PATH; skipping rp2350-riscv build.\n"
+    "  To acquire the RP2350 Hazard3 RISC-V toolchain:\n"
+    "  - Prebuilt binaries (Raspberry Pi pico-sdk-tools, supports x86_64 and aarch64):\n"
+    "      Download riscv-toolchain-15-*-lin.tar.gz from:\n"
+    "      https://github.com/raspberrypi/pico-sdk-tools/releases\n"
+    "      Extract and add its bin/ directory to PATH (or pass -DPICO_TOOLCHAIN_PATH=/path/to/riscv-toolchain).\n"
+    "  - Or via AUR:\n"
+    "      yay -S --needed riscv32-unknown-elf-gcc   (or xpack-riscv-none-elf-gcc-bin)")
+endif()
 
 find_program(PICOWS_HOST_CC gcc PATHS /usr/bin NO_DEFAULT_PATH)
 if(NOT PICOWS_HOST_CC)

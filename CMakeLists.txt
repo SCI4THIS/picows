@@ -28,7 +28,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(BOARD raspberry_pi_pico CACHE STRING "Target board")
   endif()
   include(${PICOWS_ROOT}/hw/bsp/family_support.cmake)
-  project(picows C CXX ASM)
+  project(picows_project C CXX ASM)
   family_initialize_project(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR})
 else()
   if(NOT TARGET pico_stdlib)
@@ -45,12 +45,12 @@ function(picows_initialize_project TARGET_NAME)
   if(NOT TARGET pico_stdlib)
     message(FATAL_ERROR "picows_initialize_project(${TARGET_NAME}) requires pico_sdk_init() first")
   endif()
-  if(NOT TARGET picows_ws)
+  if(NOT TARGET picows)
     message(FATAL_ERROR "picows_initialize_project(${TARGET_NAME}) requires add_subdirectory(picows) first")
   endif()
   # pico_unique_id is not part of pico_stdlib. The archive calls
   # pico_get_unique_board_id() and does not compile that .c itself.
-  target_link_libraries(${TARGET_NAME} PRIVATE picows_ws pico_stdlib pico_unique_id)
+  target_link_libraries(${TARGET_NAME} PRIVATE picows pico_stdlib pico_unique_id)
   set_target_properties(${TARGET_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 endfunction()
 
@@ -68,7 +68,7 @@ if(NOT TARGET lwipopts_provider)
 endif()
 
 #--------------------------------------------------------------------+
-# picows_ws: USB ECM/RNDIS + lwIP + DHCP + DNS + WebSocket
+# picows: USB ECM/RNDIS + lwIP + DHCP + DNS + WebSocket
 #--------------------------------------------------------------------+
 # Stage and patch pico-ws-server into the build directory so that
 # submodules/pico-ws-server remains pristine in the source tree.
@@ -170,25 +170,12 @@ set(PICOWS_TINYUSB_SOURCES
   ${PICOWS_ROOT}/src/portable/raspberrypi/rp2040/dcd_rp2040.c
   ${PICOWS_ROOT}/src/portable/raspberrypi/rp2040/rp2040_usb.c
   ${PICOWS_ROOT}/src/device/usbd.c
-  ${PICOWS_ROOT}/src/class/audio/audio_device.c
-  ${PICOWS_ROOT}/src/class/cdc/cdc_device.c
-  ${PICOWS_ROOT}/src/class/dfu/dfu_device.c
-  ${PICOWS_ROOT}/src/class/dfu/dfu_rt_device.c
-  ${PICOWS_ROOT}/src/class/hid/hid_device.c
-  ${PICOWS_ROOT}/src/class/midi/midi_device.c
-  ${PICOWS_ROOT}/src/class/midi/midi2_device.c
-  ${PICOWS_ROOT}/src/class/msc/msc_device.c
-  ${PICOWS_ROOT}/src/class/mtp/mtp_device.c
   ${PICOWS_ROOT}/src/class/net/ecm_rndis_device.c
   ${PICOWS_ROOT}/src/class/net/ncm_device.c
-  ${PICOWS_ROOT}/src/class/printer/printer_device.c
-  ${PICOWS_ROOT}/src/class/usbtmc/usbtmc_device.c
-  ${PICOWS_ROOT}/src/class/vendor/vendor_device.c
-  ${PICOWS_ROOT}/src/class/video/video_device.c
   ${PICOWS_ROOT}/hw/bsp/rp2040/family.c
 )
 
-add_library(picows_ws STATIC
+add_library(picows STATIC
   ${PICOWS_ROOT}/src/ws.cpp
   ${PICOWS_ROOT}/src/usb_descriptors.c
   ${PICOWS_ROOT}/lib/networking/dhserver.c
@@ -230,11 +217,11 @@ add_library(picows_ws STATIC
 
 option(PICOWS_ENABLE_IPERF "Compile lwIP iperf. The application must start the server." OFF)
 if(PICOWS_ENABLE_IPERF)
-  target_sources(picows_ws PRIVATE ${LWIP}/src/apps/lwiperf/lwiperf.c)
-  target_compile_definitions(picows_ws PUBLIC INCLUDE_IPERF=1)
+  target_sources(picows PRIVATE ${LWIP}/src/apps/lwiperf/lwiperf.c)
+  target_compile_definitions(picows PUBLIC INCLUDE_IPERF=1)
 endif()
 
-target_include_directories(picows_ws
+target_include_directories(picows
   PUBLIC
     ${PICOWS_ROOT}/include
     ${LWIP}/src/include
@@ -252,7 +239,7 @@ if(NOT TINYUSB_OPT_OS)
   set(TINYUSB_OPT_OS OPT_OS_PICO)
 endif()
 
-target_compile_definitions(picows_ws
+target_compile_definitions(picows
   PUBLIC
     CFG_TUSB_MCU=OPT_MCU_RP2040
     CFG_TUSB_OS=${TINYUSB_OPT_OS}
@@ -261,12 +248,12 @@ target_compile_definitions(picows_ws
 )
 
 if(PICO_PLATFORM STREQUAL "rp2040")
-  target_compile_definitions(picows_ws PRIVATE
+  target_compile_definitions(picows PRIVATE
     PICO_RP2040_USB_DEVICE_ENUMERATION_FIX=1
     PICO_RP2040_USB_DEVICE_UFRAME_FIX=1
   )
   # dcd_rp2040.c calls this on bus reset. It is not part of pico_stdlib.
-  target_sources(picows_ws PRIVATE
+  target_sources(picows PRIVATE
     ${PICO_SDK_PATH}/src/rp2_common/pico_fix/rp2040_usb_device_enumeration/rp2040_usb_device_enumeration.c
   )
 endif()
@@ -274,7 +261,7 @@ endif()
 # Header-only SDK targets. Linking pico_stdlib here compiles its INTERFACE
 # sources (including crt0) into the archive. The application links pico_stdlib
 # and pico_unique_id once, via picows_initialize_project().
-target_link_libraries(picows_ws
+target_link_libraries(picows
   PUBLIC
     lwipopts_provider
   PRIVATE
@@ -290,14 +277,14 @@ target_link_libraries(picows_ws
 # hardware/sync.h includes the Hazard3 headers when the compiler is RISC-V.
 # Those headers are not part of the Arm pico_stdlib_headers closure.
 if(PICO_PLATFORM STREQUAL "rp2350-riscv")
-  target_link_libraries(picows_ws PRIVATE
+  target_link_libraries(picows PRIVATE
     hardware_hazard3_headers
     hardware_riscv_headers
   )
 endif()
 
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(picows_ws PRIVATE
+  target_compile_options(picows PRIVATE
     -Wno-error=null-dereference
     -Wno-error=conversion
     -Wno-error=sign-conversion
@@ -307,7 +294,7 @@ endif()
 
 #--------------------------------------------------------------------+
 # Optional HTTP server: picows_http (<picows/http.h>)
-# The USB network stack is provided by picows_ws.
+# The USB network stack is provided by picows.
 #--------------------------------------------------------------------+
 add_library(picows_http STATIC
   ${PICOWS_ROOT}/src/http.c
@@ -323,7 +310,7 @@ target_include_directories(picows_http
 
 target_link_libraries(picows_http
   PUBLIC
-    picows_ws
+    picows
 )
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -340,11 +327,11 @@ endif()
 if(PICOWS_DIST_DIR AND PICOWS_BUILD_EXAMPLE)
   add_custom_target(picows_dist ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PICOWS_DIST_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:picows_ws> "${PICOWS_DIST_DIR}/"
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:picows> "${PICOWS_DIST_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:picows_http> "${PICOWS_DIST_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:ws_echo>" "${PICOWS_DIST_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:ws_echo>/ws_echo.uf2" "${PICOWS_DIST_DIR}/"
     COMMENT "Copying picows libraries and ws_echo into ${PICOWS_DIST_DIR}"
   )
-  add_dependencies(picows_dist picows_ws picows_http ws_echo)
+  add_dependencies(picows_dist picows picows_http ws_echo)
 endif()

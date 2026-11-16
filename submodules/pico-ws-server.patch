@@ -75,7 +75,7 @@ diff --git a/CMakeLists.txt	2026-11-16 01:52:08.286730726 +0000 b/CMakeLists.txt
 -    COMMAND ${CMAKE_COMMAND} -E echo "\\#endif // STATIC_HTML_HEX" >> ${PROJECT_BINARY_DIR}/static_html_hex.h
 -)
 +# pico_stdlib and Mbed TLS are not linked here. picows compiles these objects
-+# into libpicows_ws.a and supplies a SHA-1 for the handshake. A standalone
++# into libpicows.a and supplies a SHA-1 for the handshake. A standalone
 +# CYW43 build still pulls the Pico W driver below.
 +if(NOT PICO_WS_SERVER_USE_CYW43)
 +  target_link_libraries(pico_ws_server PUBLIC lwipopts_provider)

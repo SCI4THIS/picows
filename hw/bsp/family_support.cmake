@@ -518,9 +518,8 @@ function(family_configure_common TARGET RTOS)
   endif ()
 
   if (NOT RTOS STREQUAL zephyr)
-    # Analyze size with bloaty and linkermap
+    # Analyze size with bloaty
     family_add_bloaty(${TARGET})
-    family_add_linkermap(${TARGET})
     family_add_membrowse(${TARGET})
   endif ()
 

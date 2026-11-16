@@ -27,7 +27,7 @@
 /*
  * USB ECM/RNDIS + lwIP netif. This used to be the TinyUSB net_lwip_webserver
  * example, compiled into the library by #include "main.c". It lives here
- * because picows_ws owns the USB network stack. picows_http is optional and
+ * because picows owns the USB network stack. picows_http is optional and
  * calls picows_core_init() below. The echo page is examples/ws_echo.
  *
  * Linux and Windows use RNDIS; Linux and macOS use CDC-ECM. Descriptor order

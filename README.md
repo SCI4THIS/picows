@@ -6,7 +6,7 @@
 
 `picows` provides two library targets:
 
-1. **`picows_ws`** (`#include <picows/ws.h>`, which includes `<picows/core.h>`)
+1. **`picows`** (`#include <picows/ws.h>`, which includes `<picows/core.h>`)
    - USB virtual network adapter (ECM/RNDIS via TinyUSB), lwIP, DHCP server, and DNS server.
    - WebSocket server: text and binary frames, unicast and broadcast.
    - Optional static page on `GET /` via `picows_ws_args_t.page`.
@@ -20,12 +20,12 @@
 2. **`picows_http`** (`#include <picows/http.h>`) *(optional)*
    - Serves a client-supplied static HTML buffer (`buf` + `len`, raw or gzipped) on `GET /`.
    - Uses a two-phase allocation constructor: `size_t picows_http(const picows_http_args_t *args, picows_http_t *hs)`.
-   - Can run on its own port, or share a port with `picows_ws` by passing the `picows_http_t *` in `picows_ws_args_t.http`.
-   - Link `picows_ws` as well: the USB network stack is part of that library.
+   - Can run on its own port, or share a port with `picows` by passing the `picows_http_t *` in `picows_ws_args_t.http`.
+   - Link `picows` as well: the USB network stack is part of that library.
 
 ## Example
 
-`examples/ws_echo` serves an "It works" page with a text box and a list of messages echoed by the WebSocket server. A standalone build produces `ws_echo.uf2` next to the libraries for each architecture.
+`examples/ws_echo` serves an "It works" page with a text box and a list of messages echoed by the WebSocket server. A standalone build dynamically detects installed cross-compilers (`arm-none-eabi-gcc` for RP2040 / RP2350-Arm, and `riscv32-*-elf-gcc` / `riscv-none-elf-gcc` for RP2350-RISC-V) and produces `ws_echo.uf2` next to the libraries for each available architecture.
 
 ```
 cmake -S . -B build
@@ -34,15 +34,33 @@ cmake --build build
 
 Outputs:
 
-| Directory | Board | CPU |
-| --- | --- | --- |
-| `build/dist/rp2040/` | Pico | Arm Cortex-M0+ |
-| `build/dist/rp2350-arm/` | Pico 2 | Arm Cortex-M33 |
-| `build/dist/rp2350-riscv/` | Pico 2 | Hazard3 RISC-V |
+| Directory | Board | CPU | Required Compiler |
+| --- | --- | --- | --- |
+| `build/dist/rp2040/` | Pico | Arm Cortex-M0+ | `arm-none-eabi-gcc` |
+| `build/dist/rp2350-arm/` | Pico 2 | Arm Cortex-M33 | `arm-none-eabi-gcc` |
+| `build/dist/rp2350-riscv/` | Pico 2 | Hazard3 RISC-V | `riscv32-corev-elf-gcc` / `riscv32-pico-elf-gcc` / `riscv32-unknown-elf-gcc` / `riscv-none-elf-gcc` |
 
-Each directory contains `libpicows_ws.a`, `libpicows_http.a`, `ws_echo.elf`, and `ws_echo.uf2`.
+Each built directory contains `libpicows.a`, `libpicows_http.a`, `ws_echo.elf`, and `ws_echo.uf2`.
 
-The RISC-V build needs `riscv-none-elf-gcc`, `riscv32-unknown-elf-gcc`, or `riscv32-pico-elf-gcc` on `PATH` (or `-DPICO_TOOLCHAIN_PATH` pointing at that toolchain). Flash `ws_echo.uf2`, then open `http://192.168.7.1/` or `http://tiny.usb/`.
+### Installing Cross-Compilers
+
+- **ARM (`rp2040` and `rp2350-arm`)**:
+  - On Arch Linux ARM (`aarch64` / Omarchy):
+    ```bash
+    yay -S --needed gcc-arm-none-eabi-bin
+    ```
+  - On Arch Linux (`x86_64`):
+    ```bash
+    sudo pacman -S --needed arm-none-eabi-gcc arm-none-eabi-newlib arm-none-eabi-binutils
+    ```
+- **RISC-V (`rp2350-riscv`)**:
+  - Prebuilt binaries from Raspberry Pi (`x86_64` and `aarch64`): download `riscv-toolchain-15-*-lin.tar.gz` from [pico-sdk-tools releases](https://github.com/raspberrypi/pico-sdk-tools/releases) and add its `bin/` directory to `PATH` (or pass `-DPICO_TOOLCHAIN_PATH=/path/to/riscv-toolchain`).
+  - Or via AUR:
+    ```bash
+    yay -S --needed riscv32-unknown-elf-gcc
+    ```
+
+Flash `ws_echo.uf2`, then open `http://192.168.7.1/` or `http://tiny.usb/`.
 
 The same build runs `tests/http_parse_test` on the host. It checks that an HTTP header split across packets is recognized, and that the WebSocket accept hash matches RFC 6455.
 
@@ -53,9 +71,9 @@ add_subdirectory(picows)
 picows_initialize_project(my_app)
 ```
 
-`picows_initialize_project` links `picows_ws` and `pico_stdlib` and selects the C++ linker. It does not change `BOARD` or `CMAKE_BUILD_TYPE`. Link `picows_http` as well for the optional HTTP server. `PICOWS_ENABLE_IPERF` compiles lwIP iperf; the application has to start that server itself.
+`picows_initialize_project` links `picows` and `pico_stdlib` and selects the C++ linker. It does not change `BOARD` or `CMAKE_BUILD_TYPE`. Link `picows_http` as well for the optional HTTP server. `PICOWS_ENABLE_IPERF` compiles lwIP iperf; the application has to start that server itself.
 
-`libpicows_ws.a` contains picows, lwIP, and the TinyUSB device stack. It does not contain the Pico startup files. The application still links `pico_stdlib`. Do not also link the SDK's `tinyusb_device`.
+`libpicows.a` contains picows, lwIP, and the TinyUSB device stack. It does not contain the Pico startup files. The application still links `pico_stdlib`. Do not also link the SDK's `tinyusb_device`.
 
 See `NOTICE` for which license applies to which files.
 
@@ -65,7 +83,7 @@ See `NOTICE` for which license applies to which files.
 
 ## Usage Example
 
-Link `picows_ws` (and `picows_http` only if you want the standalone HTTP server). The final link must use the C++ linker.
+Link `picows` (and `picows_http` only if you want the standalone HTTP server). The final link must use the C++ linker.
 
 ```c
 #include <stdlib.h>

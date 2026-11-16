@@ -95,58 +95,9 @@ target_sources(tinyusb_device_base INTERFACE
 		${TOP}/src/portable/raspberrypi/rp2040/dcd_rp2040.c
 		${TOP}/src/portable/raspberrypi/rp2040/rp2040_usb.c
 		${TOP}/src/device/usbd.c
-		${TOP}/src/class/audio/audio_device.c
-		${TOP}/src/class/cdc/cdc_device.c
-		${TOP}/src/class/dfu/dfu_device.c
-		${TOP}/src/class/dfu/dfu_rt_device.c
-		${TOP}/src/class/hid/hid_device.c
-		${TOP}/src/class/midi/midi_device.c
-		${TOP}/src/class/midi/midi2_device.c
-		${TOP}/src/class/msc/msc_device.c
-		${TOP}/src/class/mtp/mtp_device.c
 		${TOP}/src/class/net/ecm_rndis_device.c
 		${TOP}/src/class/net/ncm_device.c
-		${TOP}/src/class/printer/printer_device.c
-		${TOP}/src/class/usbtmc/usbtmc_device.c
-		${TOP}/src/class/vendor/vendor_device.c
-		${TOP}/src/class/video/video_device.c
 		)
-
-#------------------------------------
-# Base config for host mode; wrapped by SDK's tinyusb_host
-#------------------------------------
-add_library(tinyusb_host_base INTERFACE)
-target_sources(tinyusb_host_base INTERFACE
-		${TOP}/src/portable/raspberrypi/rp2040/hcd_rp2040.c
-		${TOP}/src/portable/raspberrypi/rp2040/rp2040_usb.c
-		${TOP}/src/host/usbh.c
-		${TOP}/src/host/hub.c
-		${TOP}/src/class/cdc/cdc_host.c
-		${TOP}/src/class/hid/hid_host.c
-		${TOP}/src/class/midi/midi_host.c
-		${TOP}/src/class/midi/midi2_host.c
-		${TOP}/src/class/msc/msc_host.c
-		${TOP}/src/class/vendor/vendor_host.c
-		)
-
-# Sometimes have to do host specific actions in mostly common functions
-target_compile_definitions(tinyusb_host_base INTERFACE
-		RP2040_USB_HOST_MODE=1
-)
-
-#------------------------------------
-# Host MAX3421
-#------------------------------------
-add_library(tinyusb_host_max3421 INTERFACE)
-target_sources(tinyusb_host_max3421 INTERFACE
-	${TOP}/src/portable/analog/max3421/hcd_max3421.c
-	)
-target_compile_definitions(tinyusb_host_max3421 INTERFACE
-	CFG_TUH_MAX3421=1
-	)
-target_link_libraries(tinyusb_host_max3421 INTERFACE
-	hardware_spi
-	)
 
 #------------------------------------
 # BSP & Additions
@@ -211,7 +162,7 @@ function(family_add_default_example_warnings TARGET)
 	get_target_property(EXAMPLE_SOURCES ${TARGET} SOURCES)
 	set_source_files_properties(${EXAMPLE_SOURCES} PROPERTIES COMPILE_OPTIONS "${example_warn_flags}")
 
-  foreach(TINYUSB_TARGET IN ITEMS tinyusb_common_base tinyusb_device_base tinyusb_host_base tinyusb_host_max3421 tinyusb_bsp)
+  foreach(TINYUSB_TARGET IN ITEMS tinyusb_common_base tinyusb_device_base tinyusb_bsp)
     get_target_property(TINYUSB_SOURCES ${TINYUSB_TARGET} INTERFACE_SOURCES)
     set_source_files_properties(${TINYUSB_SOURCES} PROPERTIES COMPILE_OPTIONS "${WARN_FLAGS_${CMAKE_C_COMPILER_ID}}")
 	endforeach()

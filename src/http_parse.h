@@ -5,8 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Room for a request line and a few headers, including the terminating NUL. */
-#define PICOWS_HTTP_REQ_CAP 512
+/* Room for a request line and browser headers, including the terminating NUL. */
+#define PICOWS_HTTP_REQ_CAP 4096
 
 typedef enum picows_http_parse_status {
   PICOWS_HTTP_PARSE_NEED_MORE = 0,
