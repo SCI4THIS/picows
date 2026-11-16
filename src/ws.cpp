@@ -463,11 +463,6 @@ static struct picows_ws_global_st {
     .num_instances = 0,
 };
 
-/* Close from a user callback enqueues a special SERVER_CLOSE message on the
- * server's message queue and adds the server to ws_cull. While on ws_cull,
- * incoming messages are blocked from being added to the message queue. Once
- * popMessages hits the SERVER_CLOSE message, the server is marked ready for
- * destruction and ws_cull_run() closes and destroys it. */
 static int ws_callback_depth;
 static picows_ws_t *ws_cull[MAX_WS_INSTANCES];
 static bool ws_cull_ready[MAX_WS_INSTANCES];
@@ -530,7 +525,6 @@ static void ws_poll_all(void) {
       picows_ws_global.instances[i]->server.popMessages();
     }
   }
-  /* Message callbacks have returned and popMessages has processed any SERVER_CLOSE message. */
   ws_cull_run();
 }
 
@@ -591,8 +585,29 @@ extern "C" size_t picows_ws(const picows_ws_args_t *args, picows_ws_t *ws) {
   return sizeof(struct picows_ws_st);
 }
 
+static void ws_cull_remove(picows_ws_t *srv) {
+  size_t i = 0;
+  while (i < ws_cull_count) {
+    if (ws_cull[i] != srv) {
+      i++;
+      continue;
+    }
+    for (size_t j = i; j + 1 < ws_cull_count; j++) {
+      ws_cull[j] = ws_cull[j + 1];
+      ws_cull_ready[j] = ws_cull_ready[j + 1];
+    }
+    ws_cull_count--;
+    ws_cull[ws_cull_count] = nullptr;
+    ws_cull_ready[ws_cull_count] = false;
+  }
+}
+
 static void ws_close_server_now(picows_ws_t *srv) {
-  if (!srv || !srv->initialized) {
+  if (!srv) {
+    return;
+  }
+  ws_cull_remove(srv);
+  if (!srv->initialized) {
     return;
   }
   size_t kept = 0;
@@ -613,17 +628,19 @@ static void ws_close_server_now(picows_ws_t *srv) {
 static void ws_cull_add(picows_ws_t *srv) {
   for (size_t i = 0; i < ws_cull_count; i++) {
     if (ws_cull[i] == srv) {
+      srv->on_cull_list = true;
+      srv->server.queueServerClose();
       return;
     }
   }
-  if (ws_cull_count < MAX_WS_INSTANCES) {
-    /* Enqueue the special close message and block new messages before adding to the cull list. */
-    srv->on_cull_list = true;
-    srv->server.queueServerClose();
-    ws_cull[ws_cull_count] = srv;
-    ws_cull_ready[ws_cull_count] = false;
-    ws_cull_count++;
+  if (ws_cull_count >= MAX_WS_INSTANCES) {
+    return;
   }
+  srv->on_cull_list = true;
+  srv->server.queueServerClose();
+  ws_cull[ws_cull_count] = srv;
+  ws_cull_ready[ws_cull_count] = false;
+  ws_cull_count++;
 }
 
 static void ws_cull_run(void) {
@@ -631,20 +648,22 @@ static void ws_cull_run(void) {
     return;
   }
   ws_culling = true;
-  size_t i = 0;
-  while (i < ws_cull_count) {
-    if (ws_cull_ready[i]) {
-      picows_ws_t *srv = ws_cull[i];
-      for (size_t j = i; j + 1 < ws_cull_count; j++) {
-        ws_cull[j] = ws_cull[j + 1];
-        ws_cull_ready[j] = ws_cull_ready[j + 1];
+  /* A server closed after its popMessages() returned is still not ready.
+   * Pop the cull list again so SERVER_CLOSE is observed before this poll
+   * returns. Destroying one server can queue the other. */
+  for (size_t pass = 0; pass < MAX_WS_INSTANCES; pass++) {
+    for (size_t n = 0; n < ws_cull_count; n++) {
+      if (!ws_cull_ready[n] && ws_cull[n] && ws_cull[n]->initialized) {
+        ws_cull[n]->server.popMessages();
       }
-      ws_cull_count--;
-      ws_cull[ws_cull_count] = nullptr;
-      ws_cull_ready[ws_cull_count] = false;
-      ws_close_server_now(srv);
-    } else {
-      i++;
+    }
+    size_t i = 0;
+    while (i < ws_cull_count) {
+      if (!ws_cull_ready[i] || ws_cull[i] == nullptr) {
+        i++;
+        continue;
+      }
+      ws_close_server_now(ws_cull[i]);
     }
   }
   ws_culling = false;

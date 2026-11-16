@@ -169,12 +169,10 @@ diff -ruN a/include/pico_ws_server/web_socket_server.h b/include/pico_ws_server/
    void setCallbackExtra(void* arg);
    void* getCallbackExtra();
  
-@@ -35,11 +37,19 @@
+@@ -35,11 +37,17 @@
    // Must be called routinely to process incoming messages (triggers message callback)
    void popMessages();
  
-+  // Enqueue a special server-close message on the message queue and block further incoming messages.
-+  // If no connections are active, invokes the ServerCloseCallback at the end of popMessages().
 +  void queueServerClose();
 +  bool isServerCloseQueued() const;
 +
@@ -201,20 +199,19 @@ diff -ruN a/src/client_connection.cpp b/src/client_connection.cpp
  #include "lwip/pbuf.h"
  #include "lwip/tcp.h"
  
-@@ -13,8 +13,19 @@
+@@ -13,8 +13,18 @@
  
  void ClientConnection::popMessages() {
    while (!message_queue.empty()) {
 -    server.onMessage(this, message_queue.front().getPayload(), message_queue.front().getPayloadSize());
-+    WebSocketMessage msg = std::move(message_queue.front());
-     message_queue.pop();
-+    if (msg.getType() == WebSocketMessage::SERVER_CLOSE) {
++    if (message_queue.front().getType() == WebSocketMessage::SERVER_CLOSE) {
 +      while (!message_queue.empty()) {
 +        message_queue.pop();
 +      }
-+      server.onServerCloseMessage();
 +      return;
 +    }
++    WebSocketMessage msg = std::move(message_queue.front());
+     message_queue.pop();
 +    server.onMessage(this, msg.getPayload(), msg.getPayloadSize());
 +    if (server.isServerCloseDelivered()) {
 +      return;
@@ -519,11 +516,11 @@ diff -ruN a/src/web_socket_server_internal.cpp b/src/web_socket_server_internal.
  
    for (const auto& [_, conn] : connection_by_id) {
      conn->popMessages();
-+    if (server_close_delivered) {
-+      return;
-+    }
 +  }
 +  if (server_close_queued && !server_close_delivered) {
++    for (const auto& [_, conn] : connection_by_id) {
++      conn->popMessages();
++    }
 +    onServerCloseMessage();
 +  }
 +}
