@@ -16,7 +16,7 @@
    - The USB/lwIP driver lives in `src/ws.cpp`. lwIP is built with `LWIP_SINGLE_NETIF`, so this stack cannot share the chip with CYW43.
    - `MEMP_NUM_TCP_PCB` is 8: four HTTP connections and four WebSocket connections, shared by every server. At most two WebSocket servers are accepted; `picows_ws()` returns 0 for a third. The listen pool is two sockets, shared with `picows_http` when HTTP uses its own port.
    - `picows_ws_close_server()` from a connect, close, or message callback is queued. `picows_poll()` or `picows_ws_poll()` destroys that server after the WebSocket stack returns. Free the server memory after that poll call returns. `picows_http_close()` releases the HTTP sockets.
-   - `linkoutput` returns `ERR_USE` when TinyUSB cannot take a packet. It does not re-enter `tud_task()`.
+   - `linkoutput` returns `ERR_USE` when TinyUSB cannot take a packet. It does not re-enter `tud_task()`. `picows_ws_send_text()`, `picows_ws_send_binary()`, and the broadcast calls still return true in that case: the frame is already on the TCP send queue, and the next `picows_poll()` sends it. False means the frame was not queued, so a later call can send it. One frame has to fit in the free send buffer. `TCP_SND_BUF` is 4 * `TCP_MSS` (5840 bytes), including bytes still waiting for ACK, and the WebSocket header is 2 bytes (4 bytes when the payload is 126 bytes or more). The copied frame also has to fit in the lwIP heap (`MEM_SIZE` is 1600 bytes). An 8192-byte payload does not fit.
 
 2. **`picows_http`** (`#include <picows/http.h>`) *(optional)*
    - Serves a client-supplied static HTML buffer (`buf` + `len`, raw or gzipped) on `GET /`.

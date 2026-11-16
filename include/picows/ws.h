@@ -68,22 +68,39 @@ const picows_ws_args_t *picows_ws_args(const picows_ws_t *srv);
 void picows_ws_poll(picows_ws_t *srv);
 
 /**
- * Send a null-terminated TEXT WebSocket message to a specific connection.
+ * Queue one null-terminated text WebSocket message on a connection.
+ *
+ * False means the frame was not queued: the server is not running, or
+ * tcp_write failed because the send buffer, the TCP segment pool, or the
+ * lwIP heap could not hold it. True means the frame is on that connection's
+ * TCP send queue. A busy USB transmit still returns true; picows_poll()
+ * retries the segment. A later call with the same bytes queues a second frame.
+ *
+ * The whole frame has to fit in the free send buffer. TCP_SND_BUF is
+ * 4 * TCP_MSS (5840 bytes) of queued TCP payload, including bytes still
+ * waiting for ACK. The server adds a 2-byte header when the payload is
+ * under 126 bytes, and a 4-byte header when it is under 65536 bytes.
+ * The copy also has to fit in the lwIP heap (MEM_SIZE is 1600 bytes), so a
+ * shorter frame can fail while other data is queued. An 8192-byte payload
+ * is larger than TCP_SND_BUF and does not fit.
  */
 bool picows_ws_send_text(picows_ws_t *srv, uint32_t conn_id, const char *text);
 
 /**
- * Send a BINARY WebSocket message to a specific connection.
+ * Queue one binary WebSocket message. Same result and size rules as
+ * picows_ws_send_text().
  */
 bool picows_ws_send_binary(picows_ws_t *srv, uint32_t conn_id, const void *data, size_t len);
 
 /**
- * Broadcast a null-terminated TEXT WebSocket message to all connected clients.
+ * Queue one text WebSocket message on every connection. Same result and
+ * size rules as picows_ws_send_text(), applied to each connection.
  */
 bool picows_ws_broadcast_text(picows_ws_t *srv, const char *text);
 
 /**
- * Broadcast a BINARY WebSocket message to all connected clients.
+ * Queue one binary WebSocket message on every connection. Same result and
+ * size rules as picows_ws_send_text(), applied to each connection.
  */
 bool picows_ws_broadcast_binary(picows_ws_t *srv, const void *data, size_t len);
 

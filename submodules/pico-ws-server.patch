@@ -219,7 +219,18 @@ diff -ruN a/src/client_connection.cpp b/src/client_connection.cpp
    }
  }
  
-@@ -65,6 +76,18 @@
+@@ -54,5 +64,9 @@
+ bool ClientConnection::flushSend() {
+   cyw43_arch_lwip_check();
+ 
+-  return tcp_output(pcb) == ERR_OK;
++  // tcp_write already queued this frame. tcp_output removes a segment from
++  // pcb->unsent only after the driver accepts it. ERR_USE (USB TX busy) and
++  // ERR_MEM leave it queued; a later poll or TCP timer retries it.
++  err_t err = tcp_output(pcb);
++  return err == ERR_OK || err == ERR_USE || err == ERR_MEM;
+ }
+@@ -65,6 +80,18 @@
    return http_handler.onSent(len);
  }
  
@@ -238,7 +249,7 @@ diff -ruN a/src/client_connection.cpp b/src/client_connection.cpp
  void ClientConnection::onClose() {
    server.onClose(this, http_handler.isUpgraded());
  }
-@@ -74,9 +97,20 @@
+@@ -74,9 +101,20 @@
  }
  
  void ClientConnection::processWebSocketMessage(WebSocketMessage&& message) {
@@ -259,7 +270,7 @@ diff -ruN a/src/client_connection.cpp b/src/client_connection.cpp
  void ClientConnection::processWebSocketPong(const void* payload, size_t size) {
    server.onPong(this, payload, size);
  }
-@@ -117,6 +151,20 @@
+@@ -117,6 +155,20 @@
    return sendWebSocketBinaryMessage(payload, size);
  }
  
