@@ -1,6 +1,6 @@
 # picows
 
-`picows` is a reusable USB Ethernet (TinyUSB ECM/RNDIS + lwIP) networking, HTTP, and WebSocket server library for Raspberry Pi Pico (RP2040 / RP2350), extracted from [pico-web-logic-analyzer](https://github.com/SCI4THIS/pico-web-logic-analyzer) so it can be added as a Git submodule in other Pico projects.
+`picows` is a reusable USB Ethernet (TinyUSB ECM/RNDIS + lwIP) networking, HTTP, and WebSocket server library for Raspberry Pi Pico (RP2040 / RP2350). Other Pico projects add it as a Git submodule.
 
 ## Architecture & Libraries
 
